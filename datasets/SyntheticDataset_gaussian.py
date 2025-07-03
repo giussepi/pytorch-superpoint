@@ -71,7 +71,7 @@ class SyntheticDataset_gaussian(data.Dataset):
                 "draw_multiple_polygons": {"kernel_boundaries": (50, 100)},
             },
         },
-        "preprocessing": {"resize": [240, 320], "blur_size": 11,},
+        "preprocessing": {"resize": [240, 320], "blur_size": 11, },
         "augmentation": {
             "photometric": {
                 "enable": False,
@@ -79,7 +79,7 @@ class SyntheticDataset_gaussian(data.Dataset):
                 "params": {},
                 "random_order": True,
             },
-            "homographic": {"enable": False, "params": {}, "valid_border_margin": 0,},
+            "homographic": {"enable": False, "params": {}, "valid_border_margin": 0, },
         },
     }
 
@@ -112,7 +112,7 @@ class SyntheticDataset_gaussian(data.Dataset):
         # temp_dir = Path(os.environ['TMPDIR'], primitive)
         temp_dir = Path(TMPDIR, primitive)
 
-        tf.logging.info("Generating tarfile for primitive {}.".format(primitive))
+        tf.compat.v1.logging.info("Generating tarfile for primitive {}.".format(primitive))
         synthetic_dataset.set_random_state(
             np.random.RandomState(config["generation"]["random_seed"])
         )
@@ -137,8 +137,8 @@ class SyntheticDataset_gaussian(data.Dataset):
                 image = cv2.GaussianBlur(image, (b, b), 0)
                 points = (
                     points
-                    * np.array(config["preprocessing"]["resize"], np.float)
-                    / np.array(config["generation"]["image_size"], np.float)
+                    * np.array(config["preprocessing"]["resize"], float)
+                    / np.array(config["generation"]["image_size"], float)
                 )
                 image = cv2.resize(
                     image,
@@ -154,7 +154,7 @@ class SyntheticDataset_gaussian(data.Dataset):
         tar.add(temp_dir, arcname=primitive)
         tar.close()
         shutil.rmtree(temp_dir)
-        tf.logging.info("Tarfile dumped to {}.".format(tar_path))
+        tf.compat.v1.logging.info("Tarfile dumped to {}.".format(tar_path))
 
     def parse_primitives(self, names, all_primitives):
         p = (
@@ -351,7 +351,7 @@ class SyntheticDataset_gaussian(data.Dataset):
             return labels
 
         def get_label_res(H, W, pnts):
-            quan = lambda x: x.round().long()
+            def quan(x): return x.round().long()
             labels_res = torch.zeros(H, W, 2)
             # pnts_int = torch.min(pnts.round().long(), torch.tensor([[H-1, W-1]]).long())
 
@@ -432,7 +432,7 @@ class SyntheticDataset_gaussian(data.Dataset):
                 **self.config["augmentation"]["homographic"]["params"],
             )
 
-            ##### use inverse from the sample homography
+            # use inverse from the sample homography
             homography = inv(homography)
             ######
 
@@ -489,7 +489,7 @@ class SyntheticDataset_gaussian(data.Dataset):
 
         sample.update({"labels_res": labels_res})
 
-        ### code for warped image
+        # code for warped image
         if self.config["warped_pair"]["enable"]:
             from datasets.data_tools import warpLabels
 
@@ -497,7 +497,7 @@ class SyntheticDataset_gaussian(data.Dataset):
                 np.array([2, 2]), shift=-1, **self.config["warped_pair"]["params"]
             )
 
-            ##### use inverse from the sample homography
+            # use inverse from the sample homography
             homography = np.linalg.inv(homography)
             #####
             inv_homography = np.linalg.inv(homography)
@@ -563,7 +563,7 @@ class SyntheticDataset_gaussian(data.Dataset):
         # labels = torch.from_numpy(labels[np.newaxis,:,:])
         # input.update({'labels': labels})
 
-        ### code for warped image
+        # code for warped image
 
         # if self.config['gaussian_label']['enable']:
         #     heatmaps = np.zeros((H, W))
@@ -596,7 +596,7 @@ class SyntheticDataset_gaussian(data.Dataset):
     def __len__(self):
         return len(self.samples)
 
-    ## util functions
+    # util functions
     def gaussian_blur(self, image):
         """
         image: np [H, W]
