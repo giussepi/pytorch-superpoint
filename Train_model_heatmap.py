@@ -107,7 +107,7 @@ class Train_model_heatmap(Train_model_frontend):
         self.printImportantConfig()
         pass
 
-    ### loadModel inherited from Train_model_frontend
+    # loadModel inherited from Train_model_frontend
     # def loadModel(self):
     #     """
     #     load model from name and params
@@ -179,14 +179,14 @@ class Train_model_heatmap(Train_model_frontend):
         :param train:
         :return:
         """
-        to_floatTensor = lambda x: torch.tensor(x).type(torch.FloatTensor)
+        def to_floatTensor(x): return torch.tensor(x).type(torch.FloatTensor)
 
         task = "train" if train else "val"
         tb_interval = self.config["tensorboard_interval"]
         if_warp = self.config['data']['warped_pair']['enable']
 
         self.scalar_dict, self.images_dict, self.hist_dict = {}, {}, {}
-        ## get the inputs
+        # get the inputs
         # logging.info('get input img and label')
         img, labels_2D, mask_2D = (
             sample["image"],
@@ -287,13 +287,12 @@ class Train_model_heatmap(Train_model_frontend):
         else:
             loss_det_warp = torch.tensor([0]).float().to(self.device)
 
-
-        ## get labels, masks, loss for detection
+        # get labels, masks, loss for detection
         # labels3D_in_loss = self.getLabels(labels_2D, self.cell_size, device=self.device)
         # mask_3D_flattened = self.getMasks(mask_2D, self.cell_size, device=self.device)
         # loss_det = self.get_loss(semi, labels3D_in_loss, mask_3D_flattened, device=self.device)
 
-        ## warping
+        # warping
         # labels3D_in_loss = self.getLabels(labels_warp_2D, self.cell_size, device=self.device)
         # mask_3D_flattened = self.getMasks(mask_warp_2D, self.cell_size, device=self.device)
         # loss_det_warp = self.get_loss(semi_warp, labels3D_in_loss, mask_3D_flattened, device=self.device)
@@ -337,7 +336,7 @@ class Train_model_heatmap(Train_model_frontend):
                 )
 
             # original: pred
-            ## check the loss on given labels!
+            # check the loss on given labels!
             outs_res = self.get_residual_loss(
                 sample["labels_2D"]
                 * to_floatTensor(heatmap_org_nms_batch).unsqueeze(1),
@@ -391,7 +390,7 @@ class Train_model_heatmap(Train_model_frontend):
             )
 
             # add clean map to tensorboard
-            ## semi_warp: flatten, to_numpy
+            # semi_warp: flatten, to_numpy
 
             heatmap_org = self.get_heatmap(semi, det_loss_type)  # tensor []
             heatmap_org_nms_batch = self.heatmap_to_nms(
@@ -402,7 +401,6 @@ class Train_model_heatmap(Train_model_frontend):
                 heatmap_warp_nms_batch = self.heatmap_to_nms(
                     self.images_dict, heatmap_warp, name="heatmap_warp"
                 )
-
 
             def update_overlap(
                 images_dict, labels_warp_2D, heatmap_nms_batch, img_warp, name
@@ -478,7 +476,7 @@ class Train_model_heatmap(Train_model_frontend):
             # patches_log = do_log(patches)
 
             # original: pred
-            ## check the loss on given labels!
+            # check the loss on given labels!
             # self.get_residual_loss(
             #     sample["labels_2D"]
             #     * to_floatTensor(heatmap_org_nms_batch).unsqueeze(1),
@@ -522,13 +520,13 @@ class Train_model_heatmap(Train_model_frontend):
 
     def heatmap_to_nms(self, images_dict, heatmap, name):
         """
-        return: 
+        return:
             heatmap_nms_batch: np [batch, H, W]
         """
         from utils.var_dim import toNumpy
 
         heatmap_np = toNumpy(heatmap)
-        ## heatmap_nms
+        # heatmap_nms
         heatmap_nms_batch = [self.heatmap_nms(h) for h in heatmap_np]  # [batch, H, W]
         heatmap_nms_batch = np.stack(heatmap_nms_batch, axis=0)
         # images_dict.update({name + '_nms_batch': heatmap_nms_batch})
@@ -641,7 +639,7 @@ class Train_model_heatmap(Train_model_frontend):
     @staticmethod
     def flatten_64to1(semi, cell_size=8):
         """
-        input: 
+        input:
             semi: tensor[batch, cell_size*cell_size, Hc, Wc]
             (Hc = H/8)
         outpus:
@@ -668,7 +666,7 @@ class Train_model_heatmap(Train_model_frontend):
         pts_nms = getPtsFromHeatmap(heatmap, conf_thresh, nms_dist)
         semi_thd_nms_sample = np.zeros_like(heatmap)
         semi_thd_nms_sample[
-            pts_nms[1, :].astype(np.int), pts_nms[0, :].astype(np.int)
+            pts_nms[1, :].astype(int), pts_nms[0, :].astype(int)
         ] = 1
         return semi_thd_nms_sample
 

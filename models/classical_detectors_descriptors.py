@@ -5,6 +5,7 @@ import cv2
 # from .base_model import BaseModel
 # from .utils import box_nms
 
+
 def classical_detector_descriptor(im, **config):
     im = np.uint8(im)
     if config['method'] == 'sift':
@@ -14,9 +15,9 @@ def classical_detector_descriptor(im, **config):
         keypoints = np.array([k.pt for k in keypoints]).astype(int)
         desc = np.array(desc)
 
-        detections = np.zeros(im.shape[:2], np.float)
+        detections = np.zeros(im.shape[:2], float)
         detections[keypoints[:, 1], keypoints[:, 0]] = responses
-        descriptors = np.zeros((im.shape[0], im.shape[1], 128), np.float)
+        descriptors = np.zeros((im.shape[0], im.shape[1], 128), float)
         descriptors[keypoints[:, 1], keypoints[:, 0]] = desc
 
     elif config['method'] == 'orb':
@@ -26,9 +27,9 @@ def classical_detector_descriptor(im, **config):
         keypoints = np.array([k.pt for k in keypoints]).astype(int)
         desc = np.array(desc)
 
-        detections = np.zeros(im.shape[:2], np.float)
+        detections = np.zeros(im.shape[:2], float)
         detections[keypoints[:, 1], keypoints[:, 0]] = responses
-        descriptors = np.zeros((im.shape[0], im.shape[1], 32), np.float)
+        descriptors = np.zeros((im.shape[0], im.shape[1], 32), float)
         descriptors[keypoints[:, 1], keypoints[:, 0]] = desc
 
     detections = detections.astype(np.float32)
@@ -36,9 +37,11 @@ def classical_detector_descriptor(im, **config):
     return (detections, descriptors)
 
 # from models.classical_detector_descriptors import SIFT_det
+
+
 def SIFT_det(img, img_rgb, visualize=False, nfeatures=2000):
     """
-    return: 
+    return:
         x_all: np [N, 2] (x, y)
         des: np [N, 128] (descriptors)
     """
@@ -64,6 +67,7 @@ def SIFT_det(img, img_rgb, visualize=False, nfeatures=2000):
     # return x_all, kp, des
 
     return x_all, des
+
 
 '''
 class ClassicalDetectorsDescriptors(BaseModel):

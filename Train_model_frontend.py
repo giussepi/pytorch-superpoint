@@ -56,7 +56,7 @@ def img_overlap(img_r, img_g, img_gray):  # img_b repeat
 class Train_model_frontend(object):
     """
     # This is the base class for training classes. Wrap pytorch net to help training process.
-    
+
     """
 
     default_config = {
@@ -73,10 +73,10 @@ class Train_model_frontend(object):
             dense_desc: torch (batch_size, H, W, 256)
             pts: [batch_size, np (N, 3)]
             desc: [batch_size, np(256, N)]
-        
+
         :param config:
             dense_loss, sparse_loss (default)
-            
+
         :param save_path:
         :param device:
         :param verbose:
@@ -99,7 +99,7 @@ class Train_model_frontend(object):
         self.max_iter = config["train_iter"]
 
         if self.config["model"]["dense_loss"]["enable"]:
-            ## original superpoint paper uses dense loss
+            # original superpoint paper uses dense loss
             print("use dense_loss!")
             from utils.utils import descriptor_loss
 
@@ -107,7 +107,7 @@ class Train_model_frontend(object):
             self.descriptor_loss = descriptor_loss
             self.desc_loss_type = "dense"
         elif self.config["model"]["sparse_loss"]["enable"]:
-            ## our sparse loss has similar performace, more efficient
+            # our sparse loss has similar performace, more efficient
             print("use sparse_loss!")
             self.desc_params = self.config["model"]["sparse_loss"]["params"]
             from utils.loss_functions.sparse_loss import batch_descriptor_loss_sparse
@@ -116,7 +116,7 @@ class Train_model_frontend(object):
             self.desc_loss_type = "sparse"
 
         if self.config["model"]["subpixel"]["enable"]:
-            ## deprecated: only for testing subpixel prediction
+            # deprecated: only for testing subpixel prediction
             self.subpixel = True
 
             def get_func(path, name):
@@ -192,13 +192,13 @@ class Train_model_frontend(object):
         optimizer = self.adamOptim(net, lr=self.config["model"]["learning_rate"])
 
         n_iter = 0
-        ## new model or load pretrained
+        # new model or load pretrained
         if self.config["retrain"] == True:
             logging.info("New model")
             pass
         else:
             path = self.config["pretrained"]
-            mode = "" if path[-4:] == ".pth" else "full" # the suffix is '.pth' or 'tar.gz'
+            mode = "" if path[-4:] == ".pth" else "full"  # the suffix is '.pth' or 'tar.gz'
             logging.info("load pretrained model from: %s", path)
             net, optimizer, n_iter = pretrainedLoader(
                 net, optimizer, n_iter, path, mode=mode, full_path=True
@@ -215,7 +215,6 @@ class Train_model_frontend(object):
         self.optimizer = optimizer
         self.n_iter = setIter(n_iter)
         pass
-
 
     @property
     def writer(self):
@@ -362,7 +361,7 @@ class Train_model_frontend(object):
         tb_interval = self.config["tensorboard_interval"]
 
         losses = {}
-        ## get the inputs
+        # get the inputs
         # logging.info('get input img and label')
         img, labels_2D, mask_2D = (
             sample["image"],
@@ -416,14 +415,14 @@ class Train_model_frontend(object):
                 pass
 
         # detector loss
-        ## get labels, masks, loss for detection
+        # get labels, masks, loss for detection
         labels3D_in_loss = self.getLabels(labels_2D, self.cell_size, device=self.device)
         mask_3D_flattened = self.getMasks(mask_2D, self.cell_size, device=self.device)
         loss_det = self.get_loss(
             semi, labels3D_in_loss, mask_3D_flattened, device=self.device
         )
 
-        ## warping
+        # warping
         labels3D_in_loss = self.getLabels(
             labels_warp_2D, self.cell_size, device=self.device
         )
@@ -680,7 +679,7 @@ class Train_model_frontend(object):
 
         # writer.add_image(task + '_mask_valid_first_layer', mask_warp[0, :, :, :], n_iter)
         # writer.add_image(task + '_mask_valid_last_layer', mask_warp[-1, :, :, :], n_iter)
-        ##### print to check
+        # print to check
         # print("mask_2D shape: ", mask_warp_2D.shape)
         # print("mask_3D_flattened shape: ", mask_3D_flattened.shape)
         for i in range(self.batch_size):
@@ -726,7 +725,6 @@ class Train_model_frontend(object):
                     tb_imgs[element][idx, ...],
                     self.n_iter,
                 )
-
 
     def tb_hist_dict(self, task, tb_dict):
         for element in list(tb_dict):
@@ -774,13 +772,13 @@ class Train_model_frontend(object):
             pts_nms = getPtsFromHeatmap(semi_thd, conf_thresh, nms_dist)
             semi_thd_nms_sample = np.zeros_like(semi_thd)
             semi_thd_nms_sample[
-                pts_nms[1, :].astype(np.int), pts_nms[0, :].astype(np.int)
+                pts_nms[1, :].astype(int), pts_nms[0, :].astype(int)
             ] = 1
 
             label_sample = torch.squeeze(labels_2D[idx, :, :, :])
             # pts_nms = getPtsFromHeatmap(label_sample.numpy(), conf_thresh, nms_dist)
             # label_sample_rms_sample = np.zeros_like(label_sample.numpy())
-            # label_sample_rms_sample[pts_nms[1, :].astype(np.int), pts_nms[0, :].astype(np.int)] = 1
+            # label_sample_rms_sample[pts_nms[1, :].astype(int), pts_nms[0, :].astype(int)] = 1
             label_sample_nms_sample = label_sample
 
             if idx < 5:
@@ -885,6 +883,7 @@ class Train_model_frontend(object):
             coarse_desc, scale_factor=(cell_size, cell_size), mode="bilinear"
         )
         # norm the descriptor
+
         def norm_desc(desc):
             dn = torch.norm(desc, p=2, dim=1)  # Compute the norm.
             desc = desc.div(torch.unsqueeze(dn, 1))  # Divide by norm to normalize.

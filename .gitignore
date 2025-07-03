@@ -1,0 +1,16 @@
+*~
+*.pyc
+__pycache__/
+datasets/
+!datasets/kitti
+!datasets/kitti_split
+!datasets/tum_split
+!datasets/utils/
+!datasets/*.py
+logs/
+!logs/magicpoint_synth20/checkpoints/
+!logs/magicpoint_synth_t2/
+!logs/superpoint_coco_heat2_0
+!logs/superpoint_coco_heat2_0_170k_nms4_det0.015
+!logs/superpoint_kitti_heat2_0
+runs/
