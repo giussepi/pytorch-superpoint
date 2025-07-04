@@ -2,8 +2,8 @@ data:
     dataset: 'Coco'  # 'coco' 'hpatches'
     export_folder: 'train' # train, val
     preprocessing:
-        resize: [240, 320] 
-        # resize: [480, 640] 
+        resize: [240, 320]
+        # resize: [480, 640]
     gaussian_label:
         enable: false # false
         sigma: 1.
@@ -34,7 +34,7 @@ model:
     # name: 'SuperPointNet' # 'SuperPointNet_gauss2'
     name: 'SuperPointNet_gauss2' # 'SuperPointNet_gauss2'
     params: {
-    }    
+    }
     batch_size: 1
     eval_batch_size: 1
     detection_threshold: 0.015 # 0.015
@@ -45,5 +45,3 @@ model:
 
 # pretrained: 'logs/magicpoint_synth20/checkpoints/superPointNet_200000_checkpoint.pth.tar' # 'SuperPointNet'
 pretrained: 'logs/magicpoint_synth_t2/checkpoints/superPointNet_100000_checkpoint.pth.tar'
-
-

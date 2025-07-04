@@ -5,7 +5,7 @@ Author: You-Yi Jau, Rui Zhu
 Date: 2019/12/12
 """
 
-## basic
+# basic
 import argparse
 import time
 import csv
@@ -19,7 +19,7 @@ from imageio import imread
 from tqdm import tqdm
 from tensorboardX import SummaryWriter
 
-## torch
+# torch
 import torch
 from torch.autograd import Variable
 import torch.backends.cudnn as cudnn
@@ -28,7 +28,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.data
 
-## other functions
+# other functions
 from utils.utils import (
     tensor2array,
     save_checkpoint,
@@ -40,21 +40,21 @@ from utils.loader import dataLoader, modelLoader, pretrainedLoader
 from utils.utils import inv_warp_image_batch
 from models.model_wrap import SuperPointFrontend_torch, PointTracker
 
-## parameters
+# parameters
 from settings import EXPER_PATH
 
-#### util functions
+# util functions
 
 
 def combine_heatmap(heatmap, inv_homographies, mask_2D, device="cpu"):
-    ## multiply heatmap with mask_2D
+    # multiply heatmap with mask_2D
     heatmap = heatmap * mask_2D
 
     heatmap = inv_warp_image_batch(
         heatmap, inv_homographies[0, :, :, :], device=device, mode="bilinear"
     )
 
-    ##### check
+    # check
     mask_2D = inv_warp_image_batch(
         mask_2D, inv_homographies[0, :, :, :], device=device, mode="bilinear"
     )
@@ -64,7 +64,7 @@ def combine_heatmap(heatmap, inv_homographies, mask_2D, device="cpu"):
     pass
 
 
-#### end util functions
+# end util functions
 
 
 def export_descriptor(config, output_dir, args):
@@ -94,7 +94,7 @@ def export_descriptor(config, output_dir, args):
     save_output = save_path / "../predictions"
     os.makedirs(save_output, exist_ok=True)
 
-    ## parameters
+    # parameters
     outputMatches = True
     subpixel = config["model"]["subpixel"]["enable"]
     patch_size = config["model"]["subpixel"]["patch_size"]
@@ -110,14 +110,14 @@ def export_descriptor(config, output_dir, args):
     # model loading
     from utils.loader import get_module
     Val_model_heatmap = get_module("", config["front_end_model"])
-    ## load pretrained
+    # load pretrained
     val_agent = Val_model_heatmap(config["model"], device=device)
     val_agent.loadModel()
 
-    ## tracker
+    # tracker
     tracker = PointTracker(max_length=2, nn_thresh=val_agent.nn_thresh)
 
-    ###### check!!!
+    # check!!!
     count = 0
     for i, sample in tqdm(enumerate(test_loader)):
         img_0, img_1 = sample["image"], sample["warped_image"]
@@ -216,7 +216,7 @@ def export_detector_homoAdapt_gpu(config, output_dir, args):
         getWriterPath(task=args.command, exper_name=args.exper_name, date=True)
     )
 
-    ## parameters
+    # parameters
     nms_dist = config["model"]["nms"]  # 4
     top_k = config["model"]["top_k"]
     homoAdapt_iter = config["data"]["homography_adaptation"]["num"]
@@ -228,7 +228,7 @@ def export_detector_homoAdapt_gpu(config, output_dir, args):
     output_images = args.outputImg
     check_exist = True
 
-    ## save data
+    # save data
     save_path = Path(output_dir)
     save_output = save_path
     save_output = save_output / "predictions" / export_task
@@ -244,7 +244,7 @@ def export_detector_homoAdapt_gpu(config, output_dir, args):
     test_set, test_loader = data["test_set"], data["test_loader"]
 
     # model loading
-    ## load pretrained
+    # load pretrained
     try:
         path = config["pretrained"]
         print("==> Loading pre-trained network.")
@@ -279,7 +279,7 @@ def export_detector_homoAdapt_gpu(config, output_dir, args):
     with open(save_file, "a") as myfile:
         myfile.write("homography adaptation: " + str(homoAdapt_iter) + "\n")
 
-    ## loop through all images
+    # loop through all images
     for i, sample in tqdm(enumerate(test_loader)):
         img, mask_2D = sample["image"], sample["valid_mask"]
         img = img.transpose(0, 1)
@@ -318,7 +318,7 @@ def export_detector_homoAdapt_gpu(config, output_dir, args):
             pts = fe.soft_argmax_points([pts])
             pts = pts[0]
 
-        ## top K points
+        # top K points
         pts = pts.transpose()
         print("total points: ", pts.shape)
         print("pts: ", pts[:5])
@@ -327,11 +327,11 @@ def export_detector_homoAdapt_gpu(config, output_dir, args):
                 pts = pts[:top_k, :]
                 print("topK filter: ", pts.shape)
 
-        ## save keypoints
+        # save keypoints
         pred = {}
         pred.update({"pts": pts})
 
-        ## - make directories
+        # - make directories
         filename = str(name)
         if task == "Kitti" or "Kitti_inh":
             scene_name = sample["scene_name"][0]
@@ -340,7 +340,7 @@ def export_detector_homoAdapt_gpu(config, output_dir, args):
         path = Path(save_output, "{}.npz".format(filename))
         np.savez_compressed(path, **pred)
 
-        ## output images for visualization labels
+        # output images for visualization labels
         if output_images:
             img_pts = draw_keypoints(img_2D * 255, pts.transpose())
             f = save_output / (str(count) + ".png")
@@ -397,7 +397,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     with open(args.config, "r") as f:
-        config = yaml.load(f)
+        config = yaml.safe_load(f)
     print("check config!! ", config)
 
     output_dir = os.path.join(EXPER_PATH, args.exper_name)

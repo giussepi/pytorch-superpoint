@@ -5,6 +5,9 @@ Author: You-Yi Jau, Rui Zhu
 Date: 2019/12/12
 """
 
+import logging
+from pathlib import Path
+
 import numpy as np
 import torch
 # from torch.autograd import Variable
@@ -13,19 +16,15 @@ import torch.optim
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.data
+import yaml
 from tqdm import tqdm
+
 from utils.loader import dataLoader, modelLoader, pretrainedLoader
-import logging
-
 from utils.tools import dict_update
-
 from utils.utils import labels2Dto3D, flattenDetection, labels2Dto3D_flattened
-
-from utils.utils import pltImshow, saveImg
+from utils.utils import saveImg  # pltImshow
 from utils.utils import precisionRecall_torch
 from utils.utils import save_checkpoint
-
-from pathlib import Path
 
 
 def thd_img(img, thd=0.015):
@@ -271,7 +270,7 @@ class Train_model_frontend(object):
         while self.n_iter < self.max_iter:
             print("epoch: ", epoch)
             epoch += 1
-            for i, sample_train in tqdm(enumerate(self.train_loader)):
+            for _, sample_train in tqdm(enumerate(self.train_loader)):
                 # train one sample
                 loss_out = self.train_val_sample(sample_train, self.n_iter, True)
                 self.n_iter += 1
@@ -458,11 +457,11 @@ class Train_model_frontend(object):
             # coarse to dense descriptor
             # work on warped level
             # dense_desc = interpolate_to_dense(coarse_desc_warp, cell_size=self.cell_size) # tensor [batch, 256, H, W]
-            dense_map = flattenDetection(semi_warp)  # tensor [batch, 1, H, W]
+            # dense_map = flattenDetection(semi_warp)  # tensor [batch, 1, H, W]
             # concat image and dense_desc
-            concat_features = torch.cat(
-                (img_warp.to(self.device), dense_map), dim=1
-            )  # tensor [batch, n, H, W]
+            # concat_features = torch.cat(
+            #     (img_warp.to(self.device), dense_map), dim=1
+            # )  # tensor [batch, n, H, W]
             # prediction
             # pred_heatmap = self.subpixNet(concat_features.to(self.device)) # tensor [batch, 1, H, W]
             pred_heatmap = outs_warp[2]  # tensor [batch, 1, H, W]
@@ -531,8 +530,6 @@ class Train_model_frontend(object):
                 "loss": loss,
                 "loss_det": loss_det,
                 "loss_det_warp": loss_det_warp,
-                "loss_det": loss_det,
-                "loss_det_warp": loss_det_warp,
                 "positive_dist": positive_dist,
                 "negative_dist": negative_dist,
             }
@@ -543,7 +540,10 @@ class Train_model_frontend(object):
             loss.backward()
             self.optimizer.step()
 
-        self.addLosses2tensorboard(losses, task)
+        # FIXME: implementation not found
+        # self.addLosses2tensorboard(losses, task)
+        # replaced with the following line
+        self.tb_scalar_dict(losses, task)
         if n_iter % tb_interval == 0 or task == "val":
             logging.info(
                 "current iteration: %d, tensorboard_interval: %d", n_iter, tb_interval
@@ -855,13 +855,6 @@ class Train_model_frontend(object):
                 % (task, n_iter, precision, recall)
             )
 
-    def get_heatmap(self, semi, det_loss_type="softmax"):
-        if det_loss_type == "l2":
-            heatmap = self.flatten_64to1(semi)
-        else:
-            heatmap = flattenDetection(semi)
-        return heatmap
-
     ######## static methods ########
     @staticmethod
     def input_to_imgDict(sample, tb_images_dict):
@@ -896,7 +889,6 @@ class Train_model_frontend(object):
 if __name__ == "__main__":
     # load config
     filename = "configs/superpoint_coco_test.yaml"
-    import yaml
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
