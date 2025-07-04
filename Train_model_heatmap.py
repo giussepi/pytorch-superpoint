@@ -4,6 +4,9 @@ Author: You-Yi Jau, Rui Zhu
 Date: 2019/12/12
 """
 
+import logging
+from pathlib import Path
+
 import numpy as np
 import torch
 # from torch.autograd import Variable
@@ -12,19 +15,15 @@ import torch.optim
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.data
+import yaml
 # from tqdm import tqdm
-# from utils.loader import dataLoader, modelLoader, pretrainedLoader
-import logging
 
-from utils.tools import dict_update
-
-# from utils.utils import labels2Dto3D, flattenDetection, labels2Dto3D_flattened
-# from utils.utils import pltImshow, saveImg
-from utils.utils import precisionRecall_torch
-# from utils.utils import save_checkpoint
-
-from pathlib import Path
 from Train_model_frontend import Train_model_frontend
+# from utils.loader import dataLoader, modelLoader, pretrainedLoader
+from utils.tools import dict_update
+# from utils.utils import pltImshow, saveImg
+from utils.utils import precisionRecall_torch, flattenDetection  # labels2Dto3D, labels2Dto3D_flattened
+# from utils.utils import save_checkpoint
 
 
 def thd_img(img, thd=0.015):
@@ -243,6 +242,7 @@ class Train_model_heatmap(Train_model_frontend):
         # detector loss
         from utils.utils import labels2Dto3D
 
+        warped_labels = None
         if self.gaussian:
             labels_2D = sample["labels_2D_gaussian"]
             if if_warp:
@@ -270,6 +270,7 @@ class Train_model_heatmap(Train_model_frontend):
         )
         # warp
         if if_warp:
+            assert warped_labels is not None
             labels_3D = labels2Dto3D(
                 warped_labels.to(self.device),
                 cell_size=self.cell_size,
@@ -651,6 +652,13 @@ class Train_model_heatmap(Train_model_frontend):
         heatmap = depth2space(semi)
         return heatmap
 
+    def get_heatmap(self, semi, det_loss_type="softmax"):
+        if det_loss_type == "l2":
+            heatmap = self.flatten_64to1(semi)
+        else:
+            heatmap = flattenDetection(semi)
+        return heatmap
+
     @staticmethod
     def heatmap_nms(heatmap, nms_dist=4, conf_thresh=0.015):
         """
@@ -674,7 +682,6 @@ class Train_model_heatmap(Train_model_frontend):
 if __name__ == "__main__":
     # load config
     filename = "configs/superpoint_coco_train_heatmap.yaml"
-    import yaml
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
