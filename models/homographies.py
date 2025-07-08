@@ -1,26 +1,31 @@
-import tensorflow as tf
-from tensorflow.contrib.image import transform as H_transform
-from math import pi
-import cv2 as cv
+# -*- coding: utf-8 -*-
+""" models/homographies.py """
 
+from math import pi
+
+import cv2 as cv
+import tensorflow as tf
+
+# from tensorflow.contrib.image import transform as H_transform
+from tf1.contrib.image import transform as H_transform
 from utils.tools import dict_update
 
 
 homography_adaptation_default_config = {
-        'num': 1,
-        'aggregation': 'sum',
-        'homographies': {
-            'translation': True,
-            'rotation': True,
-            'scaling': True,
-            'perspective': True,
-            'scaling_amplitude': 0.1,
-            'perspective_amplitude_x': 0.1,
-            'perspective_amplitude_y': 0.1,
-            'patch_ratio': 0.5,
-            'max_angle': pi,
-        },
-        'filter_counts': 0
+    'num': 1,
+    'aggregation': 'sum',
+    'homographies': {
+        'translation': True,
+        'rotation': True,
+        'scaling': True,
+        'perspective': True,
+        'scaling_amplitude': 0.1,
+        'perspective_amplitude_x': 0.1,
+        'perspective_amplitude_y': 0.1,
+        'patch_ratio': 0.5,
+        'max_angle': pi,
+    },
+    'filter_counts': 0
 }
 
 
@@ -59,7 +64,7 @@ def homography_adaptation(image, net, config):
 
         # Predict detection probabilities
         warped_shape = tf.to_int32(
-                tf.to_float(shape)*config['homographies']['patch_ratio'])
+            tf.to_float(shape)*config['homographies']['patch_ratio'])
         input_warped = tf.image.resize_images(warped, warped_shape)
         prob = net(input_warped)['prob']
         prob = tf.image.resize_images(tf.expand_dims(prob, axis=-1), shape)[..., 0]
@@ -72,16 +77,16 @@ def homography_adaptation(image, net, config):
         return i + 1, probs, counts, images
 
     _, probs, counts, images = tf.while_loop(
-            lambda i, p, c, im: tf.less(i, config['num'] - 1),
-            step,
-            [0, probs, counts, images],
-            parallel_iterations=1,
-            back_prop=False,
-            shape_invariants=[
-                    tf.TensorShape([]),
-                    tf.TensorShape([None, None, None, None]),
-                    tf.TensorShape([None, None, None, None]),
-                    tf.TensorShape([None, None, None, 1, None])])
+        lambda i, p, c, im: tf.less(i, config['num'] - 1),
+        step,
+        [0, probs, counts, images],
+        parallel_iterations=1,
+        back_prop=False,
+        shape_invariants=[
+            tf.TensorShape([]),
+            tf.TensorShape([None, None, None, None]),
+            tf.TensorShape([None, None, None, None]),
+            tf.TensorShape([None, None, None, 1, None])])
 
     counts = tf.reduce_sum(counts, axis=-1)
     max_prob = tf.reduce_max(probs, axis=-1)
@@ -162,10 +167,10 @@ def sample_homography(
     # sample several scales, check collision with borders, randomly pick a valid one
     if scaling:
         scales = tf.concat(
-                [[1.], tf.truncated_normal([n_scales], 1, scaling_amplitude/2)], 0)
+            [[1.], tf.truncated_normal([n_scales], 1, scaling_amplitude/2)], 0)
         center = tf.reduce_mean(pts2, axis=0, keepdims=True)
         scaled = tf.expand_dims(pts2 - center, axis=0) * tf.expand_dims(
-                tf.expand_dims(scales, 1), 1) + center
+            tf.expand_dims(scales, 1), 1) + center
         if allow_artifacts:
             valid = tf.range(n_scales)  # all scales are valid except scale=1
         else:
@@ -192,8 +197,8 @@ def sample_homography(
         rot_mat = tf.reshape(tf.stack([tf.cos(angles), -tf.sin(angles), tf.sin(angles),
                                        tf.cos(angles)], axis=1), [-1, 2, 2])
         rotated = tf.matmul(
-                tf.tile(tf.expand_dims(pts2 - center, axis=0), [n_angles+1, 1, 1]),
-                rot_mat) + center
+            tf.tile(tf.expand_dims(pts2 - center, axis=0), [n_angles+1, 1, 1]),
+            rot_mat) + center
         if allow_artifacts:
             valid = tf.range(n_angles)  # all angles are valid, except angle=0
         else:
@@ -259,9 +264,9 @@ def compute_valid_mask(image_shape, homography, erosion_radius=0):
     if erosion_radius > 0:
         kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, (erosion_radius*2,)*2)
         mask = tf.nn.erosion2d(
-                mask[tf.newaxis, ..., tf.newaxis],
-                tf.to_float(tf.constant(kernel)[..., tf.newaxis]),
-                [1, 1, 1, 1], [1, 1, 1, 1], 'SAME')[0, ..., 0] + 1.
+            mask[tf.newaxis, ..., tf.newaxis],
+            tf.to_float(tf.constant(kernel)[..., tf.newaxis]),
+            [1, 1, 1, 1], [1, 1, 1, 1], 'SAME')[0, ..., 0] + 1.
     return tf.to_int32(mask)
 
 

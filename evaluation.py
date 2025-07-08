@@ -5,20 +5,23 @@ Author: You-Yi Jau, Yiqian Wang
 Date: 2020/03/30
 """
 
-import matplotlib
-matplotlib.use('Agg') # solve error of tk
-
-import numpy as np
-from evaluations.descriptor_evaluation import compute_homography
-from evaluations.detector_evaluation import compute_repeatability
-import cv2
-import matplotlib.pyplot as plt
-
 import logging
 import os
+
+import cv2
+import matplotlib
+import matplotlib.pyplot as plt
+import numpy as np
 from tqdm import tqdm
-from utils.draw import plot_imgs
+
+from evaluations.detector_evaluation import compute_repeatability
+from evaluations.descriptor_evaluation import compute_homography
 from utils.logging import *
+from utils.draw import plot_imgs
+
+
+matplotlib.use('Agg')  # solve error of tk
+
 
 def draw_matches_cv(data, matches, plot_points=True):
     if plot_points:
@@ -34,6 +37,7 @@ def draw_matches_cv(data, matches, plot_points=True):
     inliers = data['inliers'].astype(bool)
     # matches = np.array(data['matches'])[inliers].tolist()
     # matches = matches[inliers].tolist()
+
     def to3dim(img):
         if img.ndim == 2:
             img = img[:, :, np.newaxis]
@@ -42,15 +46,17 @@ def draw_matches_cv(data, matches, plot_points=True):
     img2 = to3dim(data['image2'])
     img1 = np.concatenate([img1, img1, img1], axis=2)
     img2 = np.concatenate([img2, img2, img2], axis=2)
-    return cv2.drawMatches(img1, keypoints1, img2, keypoints2, matches,
-                           None, matchColor=(0,255,0), singlePointColor=(0, 0, 255))
+    return cv2.drawMatches(np.uint8(img1), keypoints1, np.uint8(img2), keypoints2, matches,
+                           None, matchColor=(0, 255, 0), singlePointColor=(0, 0, 255))
+
 
 def isfloat(value):
-  try:
-    float(value)
-    return True
-  except ValueError:
-    return False
+    try:
+        float(value)
+        return True
+    except ValueError:
+        return False
+
 
 def find_files_with_ext(directory, extension='.npz', if_int=True):
     # print(os.listdir(directory))
@@ -70,6 +76,7 @@ def to3dim(img):
     if img.ndim == 2:
         img = img[:, :, np.newaxis]
     return img
+
 
 def evaluate(args, **options):
     # path = '/home/yoyee/Documents/SuperPoint/superpoint/logs/outputs/superpoint_coco/'
@@ -94,7 +101,6 @@ def evaluate(args, **options):
         logging.info("reproduce = True")
         np.random.seed(0)
         print(f"test random # : np({np.random.rand(1)})")
-
 
     # create output dir
     if args.outputImg:
@@ -128,15 +134,15 @@ def evaluate(args, **options):
         image = data['image']
         warped_image = data['warped_image']
         keypoints = data['prob'][:, [1, 0]]
-        print("keypoints: ", keypoints[:3,:])
+        print("keypoints: ", keypoints[:3, :])
         warped_keypoints = data['warped_prob'][:, [1, 0]]
-        print("warped_keypoints: ", warped_keypoints[:3,:])
+        print("warped_keypoints: ", warped_keypoints[:3, :])
         # print("Unwrap successfully.")
 
         if args.repeatibility:
             rep, local_err = compute_repeatability(data, keep_k_points=top_K, distance_thresh=rep_thd, verbose=False)
             repeatability.append(rep)
-            print("repeatability: %.2f"%(rep))
+            print("repeatability: %.2f" % (rep))
             if local_err > 0:
                 localization_err.append(local_err)
                 print('local_err: ', local_err)
@@ -154,20 +160,20 @@ def evaluate(args, **options):
                 plot_imgs([img1.astype(np.uint8), img2.astype(np.uint8)], titles=['img1', 'img2'], dpi=200)
                 plt.title("rep: " + str(repeatability[-1]))
                 plt.tight_layout()
-                
+
                 plt.savefig(path_rep + '/' + f_num + '.png', dpi=300, bbox_inches='tight')
                 pass
 
-
         if args.homography:
             # estimate result
-            ##### check
-            homography_thresh = [1,3,5,10,20,50]
+            # check
+            homography_thresh = [1, 3, 5, 10, 20, 50]
             #####
             result = compute_homography(data, correctness_thresh=homography_thresh)
             correctness.append(result['correctness'])
             # est_H_mean_dist.append(result['mean_dist'])
             # compute matching score
+
             def warpLabels(pnts, homography, H, W):
                 import torch
                 """
@@ -225,16 +231,16 @@ def evaluate(args, **options):
                         H (ground truth homography): numpy (3, 3)
                     """
                     from evaluations.detector_evaluation import warp_keypoints
-                    # warp points 
-                    warped_points = warp_keypoints(matches[:, :2], H) # make sure the input fits the (x,y)
+                    # warp points
+                    warped_points = warp_keypoints(matches[:, :2], H)  # make sure the input fits the (x,y)
 
                     # compute point distance
                     norm = np.linalg.norm(warped_points - matches[:, 2:4],
-                                            ord=None, axis=1)
+                                          ord=None, axis=1)
                     inliers = norm < epi
                     if verbose:
                         print("Total matches: ", inliers.shape[0], ", inliers: ", inliers.sum(),
-                                          ", percentage: ", inliers.sum() / inliers.shape[0])
+                              ", percentage: ", inliers.sum() / inliers.shape[0])
 
                     return inliers
 
@@ -246,12 +252,11 @@ def evaluate(args, **options):
                                                     matches[:, [2, 3]],
                                                     cv2.RANSAC)
                     inliers = inliers.flatten()
-                    print("Total matches: ", inliers.shape[0], 
+                    print("Total matches: ", inliers.shape[0],
                           ", inliers: ", inliers.sum(),
                           ", percentage: ", inliers.sum() / inliers.shape[0])
                     return inliers
-            
-            
+
                 def computeAP(m_test, m_score):
                     from sklearn.metrics import average_precision_score
 
@@ -262,13 +267,13 @@ def evaluate(args, **options):
 
                 def flipArr(arr):
                     return arr.max() - arr
-                
+
                 if args.sift:
                     assert result is not None
                     matches, mscores = result['matches'], result['mscores']
                 else:
                     matches, mscores = getMatches(data)
-                
+
                 real_H = data['homography']
                 if inliers_method == 'gt':
                     # use ground truth homography
@@ -278,22 +283,21 @@ def evaluate(args, **options):
                     # use opencv estimation as inliers
                     print("use opencv estimation for inliers")
                     inliers = getInliers_cv(matches, real_H, epi=3, verbose=verbose)
-                    
-                ## distance to confidence
+
+                # distance to confidence
                 if args.sift:
                     m_flip = flipArr(mscores[:])  # for sift
                 else:
-                    m_flip = flipArr(mscores[:,2])
-        
-                if inliers.shape[0] > 0 and inliers.sum()>0:
-#                     m_flip = flipArr(m_flip)
+                    m_flip = flipArr(mscores[:, 2])
+
+                if inliers.shape[0] > 0 and inliers.sum() > 0:
+                    #                     m_flip = flipArr(m_flip)
                     # compute ap
                     ap = computeAP(inliers, m_flip)
                 else:
                     ap = 0
-                
-                mAP.append(ap)
 
+                mAP.append(ap)
 
             if args.outputImg:
                 # draw warping
@@ -316,7 +320,7 @@ def evaluate(args, **options):
                 plt.tight_layout()
                 plt.savefig(path_warp + '/' + f_num + '.png')
 
-                ## plot filtered image
+                # plot filtered image
                 img1, img2 = data['image'], data['warped_image']
                 warped_img1 = cv2.warpPerspective(img1, H, (img2.shape[1], img2.shape[0]))
                 plot_imgs([img1, img2, warped_img1], titles=['img1', 'img2', 'warped_img1'], dpi=200)
@@ -342,7 +346,7 @@ def evaluate(args, **options):
                 # pltImshow(img)
 
         if args.plotMatching:
-            matches = result['matches'] # np [N x 4]
+            matches = result['matches']  # np [N x 4]
             if matches.shape[0] > 0:
                 from utils.draw import draw_matches
                 filename = path_match + '/' + f_num + 'm.png'
@@ -353,24 +357,19 @@ def evaluate(args, **options):
                 matches_out = matches[inliers == False]
 
                 def get_random_m(matches, ratio):
-                    ran_idx = np.random.choice(matches.shape[0], int(matches.shape[0]*ratio))               
+                    ran_idx = np.random.choice(matches.shape[0], int(matches.shape[0]*ratio))
                     return matches[ran_idx], ran_idx
                 image = data['image']
                 warped_image = data['warped_image']
-                ## outliers
+                # outliers
                 matches_temp, _ = get_random_m(matches_out, ratio)
                 # print(f"matches_in: {matches_in.shape}, matches_temp: {matches_temp.shape}")
                 draw_matches(image, warped_image, matches_temp, lw=0.5, color='r',
-                            filename=None, show=False, if_fig=True)
-                ## inliers
+                             filename=None, show=False, if_fig=True)
+                # inliers
                 matches_temp, _ = get_random_m(matches_in, ratio)
-                draw_matches(image, warped_image, matches_temp, lw=1.0, 
-                        filename=filename, show=False, if_fig=False)
-
-
-
-
-
+                draw_matches(image, warped_image, matches_temp, lw=1.0,
+                             filename=filename, show=False, if_fig=False)
 
     if args.repeatibility:
         repeatability_ave = np.array(repeatability).mean()
@@ -391,8 +390,6 @@ def evaluate(args, **options):
 
         print("end")
 
-
-
     # save to files
     with open(save_file, "a") as myfile:
         myfile.write("path: " + path + '\n')
@@ -411,8 +408,6 @@ def evaluate(args, **options):
             if compute_map:
                 myfile.write("nn mean AP: " + str(mAP_m) + '\n')
             myfile.write("matching score: " + str(mscore_m) + '\n')
-
-
 
         if verbose:
             myfile.write("====== details =====" + '\n')
@@ -450,7 +445,6 @@ def evaluate(args, **options):
 
 if __name__ == '__main__':
     import argparse
-
 
     logging.basicConfig(format='[%(asctime)s %(levelname)s] %(message)s',
                         datefmt='%m/%d/%Y %H:%M:%S', level=logging.INFO)

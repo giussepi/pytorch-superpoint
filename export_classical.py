@@ -42,7 +42,7 @@ def export_descriptor(config, output_dir, args):
         yaml.dump(config, f, default_flow_style=False)
     writer = SummaryWriter(getWriterPath(task=args.command, date=True))
 
-    ## save data
+    # save data
     from pathlib import Path
     # save_path = save_path_formatter(config, output_dir)
     save_path = Path(output_dir)
@@ -62,6 +62,7 @@ def export_descriptor(config, output_dir, args):
     datasize(test_loader, config, tag='test')
 
     from imageio import imread
+
     def load_as_float(path):
         return imread(path).astype(np.float32) / 255
 
@@ -94,12 +95,12 @@ def export_descriptor(config, output_dir, args):
             image = image*255
             round_method = False
             if round_method == True:
-                from models.classical_detectors_descriptors import classical_detector_descriptor # with quantization
+                from models.classical_detectors_descriptors import classical_detector_descriptor  # with quantization
                 points, desc = classical_detector_descriptor(image, **{'method': method})
                 y, x = np.where(points)
                 # pnts = np.stack((y, x), axis=1)
-                pnts = np.stack((x, y), axis=1) # should be (x, y)
-                ## collect descriptros
+                pnts = np.stack((x, y), axis=1)  # should be (x, y)
+                # collect descriptros
                 desc = desc[y, x, :]
             else:
                 # sift with subpixel accuracy
@@ -108,7 +109,6 @@ def export_descriptor(config, output_dir, args):
 
             print("desc shape: ", desc.shape)
             return pnts, desc
-
 
         pts_list = []
         pts, desc_1 = classicalDetectors(imgs_np[0], method=method)
@@ -146,8 +146,9 @@ def export_descriptor(config, output_dir, args):
                      'homography': squeezeToNumpy(sample['homography'])
                      })
 
-        ## get matches
-        data = get_sift_match(sift_kps_ii=pts_list[0], sift_des_ii=desc_1, sift_kps_jj=pts_list[1], sift_des_jj=desc_2, if_BF_matcher=True)
+        # get matches
+        data = get_sift_match(sift_kps_ii=pts_list[0], sift_des_ii=desc_1,
+                              sift_kps_jj=pts_list[1], sift_des_jj=desc_2, if_BF_matcher=True)
         matches = data['match_quality_good']
         print(f"matches: {matches.shape}")
         matches_all = data['match_quality_all']
@@ -214,9 +215,8 @@ def get_sift_match(sift_kps_ii, sift_des_ii, sift_kps_jj, sift_des_jj, if_BF_mat
     match_quality_all = np.hstack(
         (sift_kps_ii[all_ij[:, 0]], sift_kps_jj[all_ij[:, 1]], quality_all)
     )  # [[x1, y1, x2, y2, dist_good, ratio_good]]
-    return {'match_quality_good': match_quality_good, 
-    'match_quality_all': match_quality_all, 'cv_matches': cv_matches}
-
+    return {'match_quality_good': match_quality_good,
+            'match_quality_all': match_quality_all, 'cv_matches': cv_matches}
 
 
 def get_sift_match_idx_pair(sift_matcher, des1, des2):
@@ -253,7 +253,6 @@ def get_sift_match_idx_pair(sift_matcher, des1, des2):
     )
 
 
-
 if __name__ == '__main__':
     # global var
     torch.set_default_tensor_type(torch.FloatTensor)
@@ -277,7 +276,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     with open(args.config, 'r') as f:
-        config = yaml.load(f)
+        config = yaml.safe_load(f)
 
     output_dir = os.path.join(EXPER_PATH, args.exper_name)
     os.makedirs(output_dir, exist_ok=True)
