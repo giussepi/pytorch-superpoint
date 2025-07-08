@@ -14,3 +14,4 @@ logs/
 !logs/superpoint_coco_heat2_0_170k_nms4_det0.015
 !logs/superpoint_kitti_heat2_0
 runs/
+notebooks/.ipynb_checkpoints/
