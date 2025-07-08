@@ -81,7 +81,7 @@ datasets/ ($DATA_DIR)
 - MS-COCO 2014
     - [MS-COCO 2014 link](http://cocodataset.org/#download)
 - HPatches
-    - [HPatches link](https://github.com/hpatches/hpatches-dataset#user-content-full-image-sequences)
+    - [HPatches full sequences link](https://github.com/hpatches/hpatches-dataset#user-content-full-image-sequences)
 - KITTI Odometry
     - [KITTI website](http://www.cvlibs.net/datasets/kitti/raw_data.php)
     - [download link](http://www.cvlibs.net/download.php?file=raw_data_downloader.zip)
