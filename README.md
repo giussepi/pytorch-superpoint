@@ -78,10 +78,10 @@ datasets/ ($DATA_DIR)
 |   |   |-- image_00/
 |   |   `-- ...
 ```
-- MS-COCO 2014 
+- MS-COCO 2014
     - [MS-COCO 2014 link](http://cocodataset.org/#download)
 - HPatches
-    - [HPatches link](http://icvl.ee.ic.ac.uk/vbalnt/hpatches/hpatches-sequences-release.tar.gz)
+    - [HPatches link](https://github.com/hpatches/hpatches-dataset#user-content-full-image-sequences)
 - KITTI Odometry
     - [KITTI website](http://www.cvlibs.net/datasets/kitti/raw_data.php)
     - [download link](http://www.cvlibs.net/download.php?file=raw_data_downloader.zip)
@@ -95,7 +95,7 @@ datasets/ ($DATA_DIR)
     - Currently Support training on 'COCO' dataset (original paper), 'KITTI' dataset.
 - Tensorboard:
     - log files is saved under 'runs/<\export_task>/...'
-    
+
 `tensorboard --logdir=./runs/ [--host | static_ip_address] [--port | 6008]`
 
 ### 1) Training MagicPoint on Synthetic Shapes
@@ -118,18 +118,18 @@ export_folder: <'train' | 'val'>  # set export for training or validation
 ```
 python export.py <export task>  <config file>  <export folder> [--outputImg | output images for visualization (space inefficient)]
 ```
-#### export coco - do on training set 
+#### export coco - do on training set
 ```
 python export.py export_detector_homoAdapt configs/magicpoint_coco_export.yaml magicpoint_synth_homoAdapt_coco
 ```
-#### export coco - do on validation set 
+#### export coco - do on validation set
 - Edit 'export_folder' to 'val' in 'magicpoint_coco_export.yaml'
 ```
 python export.py export_detector_homoAdapt configs/magicpoint_coco_export.yaml magicpoint_synth_homoAdapt_coco
 ```
 #### export kitti
 - config
-  - check the 'root' in config file 
+  - check the 'root' in config file
   - train/ val split_files are included in `datasets/kitti_split/`.
 ```
 python export.py export_detector_homoAdapt configs/magicpoint_kitti_export.yaml magicpoint_base_homoAdapt_kitti
@@ -150,7 +150,7 @@ You need pseudo ground truth labels to traing detectors. Labels can be exported 
   - root_split_txt: where you put the train.txt/ val.txt split files (no need for COCO, needed for KITTI)
   - labels: the exported labels from homography adaptation
   - pretrained: specify the pretrained model (you can train from scratch)
-- 'eval': turn on the evaluation during training 
+- 'eval': turn on the evaluation during training
 
 #### General command
 ```
@@ -194,7 +194,7 @@ python evaluation.py logs/superpoint_hpatches_test/predictions --repeatibility -
 python export_classical.py export_descriptor configs/classical_descriptors.yaml sift_test --correspondence
 
 # evaluate (use 'sift' flag)
-python evaluation.py logs/sift_test/predictions --sift --repeatibility --homography 
+python evaluation.py logs/sift_test/predictions --sift --repeatibility --homography
 ```
 
 
@@ -209,15 +209,15 @@ python evaluation.py logs/sift_test/predictions --sift --repeatibility --homogra
 ### model from magicleap
 ```pretrained/superpoint_v1.pth```
 
-## Jupyter notebook 
+## Jupyter notebook
 ```shell
 # show images saved in the folders
 jupyter notebook
-notebooks/visualize_hpatches.ipynb 
+notebooks/visualize_hpatches.ipynb
 ```
 
 ## Updates (year.month.day)
-- 2020.08.05: 
+- 2020.08.05:
   - Update pytorch nms from (https://github.com/eric-yyjau/pytorch-superpoint/pull/19)
   - Update and test KITTI dataloader and labels on google drive (should be able to fit the KITTI raw format)
   - Update and test SIFT evaluate at step 5.
@@ -255,7 +255,7 @@ Eprint = {arXiv:2007.15122},
 ```
 
 # Credits
-This implementation is developed by [You-Yi Jau](https://github.com/eric-yyjau) and [Rui Zhu](https://github.com/Jerrypiglet). Please contact You-Yi for any problems. 
+This implementation is developed by [You-Yi Jau](https://github.com/eric-yyjau) and [Rui Zhu](https://github.com/Jerrypiglet). Please contact You-Yi for any problems.
 Again the work is based on Tensorflow implementation by [Rémi Pautrat](https://github.com/rpautrat) and [Paul-Edouard Sarlin](https://github.com/Skydes) and official [SuperPointPretrainedNetwork](https://github.com/MagicLeapResearch/SuperPointPretrainedNetwork).
 Thanks to Daniel DeTone for help during the implementation.
 
