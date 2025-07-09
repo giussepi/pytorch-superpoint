@@ -5,35 +5,27 @@ Author: You-Yi Jau, Rui Zhu
 Date: 2019/12/12
 """
 
-import torch.utils.data as data
-import torch
-import numpy as np
-from imageio import imread
-
-# from os import path as Path
-import tensorflow as tf
-from pathlib import Path
-import tarfile
-
-# import os
-import random
 import logging
+import random
+import shutil
+import tarfile
+import multiprocessing
+from pathlib import Path
 
-from utils.tools import dict_update
+import cv2
+import numpy as np
+import tensorflow as tf
+import torch
+from imageio import imread
+from torch.utils import data
+from tqdm import tqdm
 
 from datasets import synthetic_dataset
-
-# from models.homographies import sample_homography
-
-from tqdm import tqdm
-import cv2
-import shutil
 from settings import DEBUG as debug
 from settings import DATA_PATH
 from settings import SYN_TMPDIR
+from utils.tools import dict_update
 
-# DATA_PATH = '.'
-import multiprocessing
 
 TMPDIR = SYN_TMPDIR  # './datasets/' # you can define your tmp dir
 
@@ -103,13 +95,7 @@ class SyntheticDataset_gaussian(data.Dataset):
         ]
     print(drawing_primitives)
 
-    """
     def dump_primitive_data(self, primitive, tar_path, config):
-        pass
-    """
-
-    def dump_primitive_data(self, primitive, tar_path, config):
-        # temp_dir = Path(os.environ['TMPDIR'], primitive)
         temp_dir = Path(TMPDIR, primitive)
 
         tf.compat.v1.logging.info("Generating tarfile for primitive {}.".format(primitive))
@@ -205,14 +191,11 @@ class SyntheticDataset_gaussian(data.Dataset):
         ######
 
         self.action = "training" if task == "train" else "validation"
-        # self.warp_input = warp_input
-
         self.cell_size = 8
         self.getPts = getPts
 
         self.gaussian_label = False
         if self.config["gaussian_label"]["enable"]:
-            # self.params_transform = {'crop_size_y': 120, 'crop_size_x': 160, 'stride': 1, 'sigma': self.config['gaussian_label']['sigma']}
             self.gaussian_label = True
 
         self.pool = multiprocessing.Pool(6)
@@ -239,7 +222,6 @@ class SyntheticDataset_gaussian(data.Dataset):
             logging.info("Extracting archive for primitive {}.".format(primitive))
             logging.info(f"tar_path: {tar_path}")
             tar = tarfile.open(tar_path)
-            # temp_dir = Path(os.environ['TMPDIR'])
             temp_dir = Path(TMPDIR)
             tar.extractall(path=temp_dir)
             tar.close()
@@ -342,7 +324,6 @@ class SyntheticDataset_gaussian(data.Dataset):
         def get_labels(pnts, H, W):
             labels = torch.zeros(H, W)
             # print('--2', pnts, pnts.size())
-            # pnts_int = torch.min(pnts.round().long(), torch.tensor([[H-1, W-1]]).long())
             pnts_int = torch.min(
                 pnts.round().long(), torch.tensor([[W - 1, H - 1]]).long()
             )
@@ -353,8 +334,6 @@ class SyntheticDataset_gaussian(data.Dataset):
         def get_label_res(H, W, pnts):
             def quan(x): return x.round().long()
             labels_res = torch.zeros(H, W, 2)
-            # pnts_int = torch.min(pnts.round().long(), torch.tensor([[H-1, W-1]]).long())
-
             labels_res[quan(pnts)[:, 1], quan(pnts)[:, 0], :] = pnts - pnts.round()
             # print("pnts max: ", quan(pnts).max(dim=0))
             # print("labels_res: ", labels_res.shape)
@@ -559,10 +538,6 @@ class SyntheticDataset_gaussian(data.Dataset):
                 {"homographies": homography, "inv_homographies": inv_homography}
             )
 
-        # labels = self.labels2Dto3D(self.cell_size, labels)
-        # labels = torch.from_numpy(labels[np.newaxis,:,:])
-        # input.update({'labels': labels})
-
         # code for warped image
 
         # if self.config['gaussian_label']['enable']:
@@ -607,8 +582,6 @@ class SyntheticDataset_gaussian(data.Dataset):
         aug_par["photometric"]["enable"] = True
         aug_par["photometric"]["params"] = self.config["gaussian_label"]["params"]
         augmentation = self.ImgAugTransform(**aug_par)
-        # get label_2D
-        # labels = points_to_2D(pnts, H, W)
         image = image[:, :, np.newaxis]
         heatmaps = augmentation(image)
         return heatmaps.squeeze()
