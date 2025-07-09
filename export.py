@@ -5,42 +5,21 @@ Author: You-Yi Jau, Rui Zhu
 Date: 2019/12/12
 """
 
-# basic
 import argparse
-import time
-import csv
-import yaml
 import os
 import logging
 from pathlib import Path
 
 import numpy as np
+import torch
+import torch.optim
+import torch.utils.data
+import yaml
 from imageio import imread
 from tqdm import tqdm
-from tensorboardX import SummaryWriter
 
-# torch
-import torch
-from torch.autograd import Variable
-import torch.backends.cudnn as cudnn
-import torch.optim
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.utils.data
-
-# other functions
-from utils.utils import (
-    tensor2array,
-    save_checkpoint,
-    load_checkpoint,
-    save_path_formatter,
-)
-from utils.utils import getWriterPath
-from utils.loader import dataLoader, modelLoader, pretrainedLoader
-from utils.utils import inv_warp_image_batch
 from models.model_wrap import SuperPointFrontend_torch, PointTracker
-
-# parameters
+from utils.utils import inv_warp_image_batch
 from settings import EXPER_PATH
 
 # util functions
@@ -61,7 +40,6 @@ def combine_heatmap(heatmap, inv_homographies, mask_2D, device="cpu"):
     heatmap = torch.sum(heatmap, dim=0)
     mask_2D = torch.sum(mask_2D, dim=0)
     return heatmap / mask_2D
-    pass
 
 
 # end util functions
@@ -89,7 +67,6 @@ def export_descriptor(config, output_dir, args):
     logging.info("train on device: %s", device)
     with open(os.path.join(output_dir, "config.yml"), "w") as f:
         yaml.dump(config, f, default_flow_style=False)
-    writer = SummaryWriter(getWriterPath(task=args.command, date=True))
     save_path = get_save_path(output_dir)
     save_output = save_path / "../predictions"
     os.makedirs(save_output, exist_ok=True)
@@ -212,9 +189,6 @@ def export_detector_homoAdapt_gpu(config, output_dir, args):
     logging.info("train on device: %s", device)
     with open(os.path.join(output_dir, "config.yml"), "w") as f:
         yaml.dump(config, f, default_flow_style=False)
-    writer = SummaryWriter(
-        getWriterPath(task=args.command, exper_name=args.exper_name, date=True)
-    )
 
     # parameters
     nms_dist = config["model"]["nms"]  # 4
@@ -275,7 +249,6 @@ def export_detector_homoAdapt_gpu(config, output_dir, args):
     def load_as_float(path):
         return imread(path).astype(np.float32) / 255
 
-    tracker = PointTracker(max_length, nn_thresh=fe.nn_thresh)
     with open(save_file, "a") as myfile:
         myfile.write("homography adaptation: " + str(homoAdapt_iter) + "\n")
 
@@ -354,7 +327,6 @@ def export_detector_homoAdapt_gpu(config, output_dir, args):
     with open(save_file, "a") as myfile:
         myfile.write("Homography adaptation: " + str(homoAdapt_iter) + "\n")
         myfile.write("output pairs: " + str(count) + "\n")
-    pass
 
 
 if __name__ == "__main__":
