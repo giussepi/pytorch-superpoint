@@ -9,21 +9,14 @@ from pathlib import Path
 
 import numpy as np
 import torch
-# from torch.autograd import Variable
-# import torch.backends.cudnn as cudnn
 import torch.optim
-import torch.nn as nn
-import torch.nn.functional as F
 import torch.utils.data
 import yaml
-# from tqdm import tqdm
+from torch import nn
 
 from Train_model_frontend import Train_model_frontend
-# from utils.loader import dataLoader, modelLoader, pretrainedLoader
 from utils.tools import dict_update
-# from utils.utils import pltImshow, saveImg
-from utils.utils import precisionRecall_torch, flattenDetection  # labels2Dto3D, labels2Dto3D_flattened
-# from utils.utils import save_checkpoint
+from utils.utils import precisionRecall_torch, flattenDetection
 
 
 def thd_img(img, thd=0.015):
@@ -106,45 +99,6 @@ class Train_model_heatmap(Train_model_frontend):
         self.printImportantConfig()
         pass
 
-    # loadModel inherited from Train_model_frontend
-    # def loadModel(self):
-    #     """
-    #     load model from name and params
-    #     init or load optimizer
-    #     :return:
-    #     """
-    #     model = self.config["model"]["name"]
-    #     params = self.config["model"]["params"]
-    #     print("model: ", model)
-    #     net = modelLoader(model=model, **params).to(self.device)
-    #     logging.info("=> setting adam solver")
-    #     optimizer = self.adamOptim(net, lr=self.config["model"]["learning_rate"])
-    #
-    #     n_iter = 0
-    #     ## new model or load pretrained
-    #     if self.config["retrain"] == True:
-    #         logging.info("New model")
-    #         pass
-    #     else:
-    #         path = self.config["pretrained"]
-    #         mode = "" if path[:-3] == ".pth" else "full"
-    #         logging.info("load pretrained model from: %s", path)
-    #         net, optimizer, n_iter = pretrainedLoader(
-    #             net, optimizer, n_iter, path, mode=mode, full_path=True
-    #         )
-    #         logging.info("successfully load pretrained model from: %s", path)
-    #
-    #     def setIter(n_iter):
-    #         if self.config["reset_iter"]:
-    #             logging.info("reset iterations to 0")
-    #             n_iter = 0
-    #         return n_iter
-    #
-    #     self.net = net
-    #     self.optimizer = optimizer
-    #     self.n_iter = setIter(n_iter)
-    #     pass
-
     def detector_loss(self, input, target, mask=None, loss_type="softmax"):
         """
         # apply loss on detectors, default is softmax
@@ -203,9 +157,6 @@ class Train_model_heatmap(Train_model_frontend):
         Wc = W // self.cell_size
 
         # warped images
-        # img_warp, labels_warp_2D, mask_warp_2D = sample['warped_img'].to(self.device), \
-        #     sample['warped_labels'].to(self.device), \
-        #     sample['warped_valid_mask'].to(self.device)
         if if_warp:
             img_warp, labels_warp_2D, mask_warp_2D = (
                 sample["warped_img"],
@@ -214,8 +165,6 @@ class Train_model_heatmap(Train_model_frontend):
             )
 
         # homographies
-        # mat_H, mat_H_inv = \
-        # sample['homographies'].to(self.device), sample['inv_homographies'].to(self.device)
         if if_warp:
             mat_H, mat_H_inv = sample["homographies"], sample["inv_homographies"]
 
@@ -288,20 +237,8 @@ class Train_model_heatmap(Train_model_frontend):
         else:
             loss_det_warp = torch.tensor([0]).float().to(self.device)
 
-        # get labels, masks, loss for detection
-        # labels3D_in_loss = self.getLabels(labels_2D, self.cell_size, device=self.device)
-        # mask_3D_flattened = self.getMasks(mask_2D, self.cell_size, device=self.device)
-        # loss_det = self.get_loss(semi, labels3D_in_loss, mask_3D_flattened, device=self.device)
-
-        # warping
-        # labels3D_in_loss = self.getLabels(labels_warp_2D, self.cell_size, device=self.device)
-        # mask_3D_flattened = self.getMasks(mask_warp_2D, self.cell_size, device=self.device)
-        # loss_det_warp = self.get_loss(semi_warp, labels3D_in_loss, mask_3D_flattened, device=self.device)
-
         mask_desc = mask_3D_flattened.unsqueeze(1)
         lambda_loss = self.config["model"]["lambda_loss"]
-        # print("mask_desc: ", mask_desc.shape)
-        # print("mask_warp_2D: ", mask_warp_2D.shape)
 
         # descriptor loss
         if lambda_loss > 0:
@@ -473,37 +410,6 @@ class Train_model_heatmap(Train_model_frontend):
                         name="warped_gt",
                     )
 
-            # from utils.losses import do_log
-            # patches_log = do_log(patches)
-
-            # original: pred
-            # check the loss on given labels!
-            # self.get_residual_loss(
-            #     sample["labels_2D"]
-            #     * to_floatTensor(heatmap_org_nms_batch).unsqueeze(1),
-            #     heatmap_org,
-            #     sample["labels_res"],
-            #     name="original_pred",
-            # )
-            # print("heatmap_org_nms_batch: ", heatmap_org_nms_batch.shape)
-            # get_residual_loss(to_floatTensor(heatmap_org_nms_batch).unsqueeze(1), heatmap_org,
-            # sample['labels_res'], name='original_pred')
-            # warped: pred
-            # self.get_residual_loss(
-            #     sample["warped_labels"]
-            #     * to_floatTensor(heatmap_warp_nms_batch).unsqueeze(1),
-            #     heatmap_warp,
-            #     sample["warped_res"],
-            #     name="warped_pred",
-            # )
-            # get_residual_loss(to_floatTensor(heatmap_warp_nms_batch).unsqueeze(1), heatmap_warp,
-            # sample['warped_res'], name='warped_pred')
-
-            # precision, recall
-            # pr_mean = self.batch_precision_recall(
-            #     to_floatTensor(heatmap_warp_nms_batch[:, np.newaxis, ...]),
-            #     sample["warped_labels"],
-            # )
             pr_mean = self.batch_precision_recall(
                 to_floatTensor(heatmap_org_nms_batch[:, np.newaxis, ...]),
                 sample["labels_2D"],
@@ -552,14 +458,8 @@ class Train_model_heatmap(Train_model_frontend):
         self.images_dict[name + "_patches"] = outs_res["patches"]
         return outs_res
 
-    # tb_images_dict.update({'image': sample['image'], 'valid_mask': sample['valid_mask'],
-    #     'labels_2D': sample['labels_2D'], 'warped_img': sample['warped_img'],
-    #     'warped_valid_mask': sample['warped_valid_mask']})
-    # if self.gaussian:
-    #     tb_images_dict.update({'labels_2D_gaussian': sample['labels_2D_gaussian'],
-    #     'labels_2D_gaussian': sample['labels_2D_gaussian']})
-
     ######## static methods ########
+
     @staticmethod
     def batch_precision_recall(batch_pred, batch_labels):
         precision_recall_list = []
