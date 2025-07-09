@@ -4,27 +4,20 @@ This is the training script for superpoint detector and descriptor.
 Author: You-Yi Jau, Rui Zhu
 Date: 2019/12/12
 """
-
-from utils.loader import get_save_path
 import argparse
-import yaml
 import os
 import logging
 
+import yaml
 import torch
 import torch.optim
 import torch.utils.data
-
 from tensorboardX import SummaryWriter
 
-# from utils.utils import tensor2array, save_checkpoint, load_checkpoint, save_path_formatter
-from utils.utils import getWriterPath
 from settings import EXPER_PATH
-
-# loaders: data, model, pretrained model
-from utils.loader import dataLoader, modelLoader, pretrainedLoader
+from utils.utils import getWriterPath
+from utils.loader import dataLoader, get_save_path
 from utils.logging import *
-# from models.model_wrap import SuperPointFrontend_torch, PointTracker
 
 ###### util functions ######
 
@@ -32,7 +25,6 @@ from utils.logging import *
 def datasize(train_loader, config, tag='train'):
     logging.info('== %s split size %d in %d batches' %
                  (tag, len(train_loader)*config['model']['batch_size'], len(train_loader)))
-    pass
 
 
 ###### util functions end ######
@@ -41,18 +33,12 @@ def datasize(train_loader, config, tag='train'):
 ###### train script ######
 def train_base(config, output_dir, args):
     return train_joint(config, output_dir, args)
-    pass
-
-# def train_joint_dsac():
-#     pass
 
 
 def train_joint(config, output_dir, args):
     assert 'train_iter' in config
 
     # config
-    # from utils.utils import pltImshow
-    # from utils.utils import saveImg
     torch.set_default_tensor_type(torch.FloatTensor)
     task = config['data']['dataset']
 
@@ -60,14 +46,12 @@ def train_joint(config, output_dir, args):
     logging.info('train on device: %s', device)
     with open(os.path.join(output_dir, 'config.yml'), 'w') as f:
         yaml.dump(config, f, default_flow_style=False)
-    # writer = SummaryWriter(getWriterPath(task=args.command, date=True))
     writer = SummaryWriter(getWriterPath(task=args.command,
                                          exper_name=args.exper_name, date=True))
     # save data
     save_path = get_save_path(output_dir)
 
     # data loading
-    # data = dataLoader(config, dataset='syn', warp_input=True)
     data = dataLoader(config, dataset=task, warp_input=True)
     train_loader, val_loader = data['train_loader'], data['val_loader']
 
@@ -97,7 +81,6 @@ def train_joint(config, output_dir, args):
     except KeyboardInterrupt:
         print("press ctrl + c, save model!")
         train_agent.saveModel()
-        pass
 
 
 if __name__ == '__main__':
