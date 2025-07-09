@@ -11,11 +11,9 @@ import torch
 import torch.optim
 import torch.utils.data
 
+from utils.utils import load_checkpoint
 
-from utils.utils import tensor2array, save_checkpoint, load_checkpoint, save_path_formatter
-# from settings import EXPER_PATH
 
-# from utils.loader import get_save_path
 def get_save_path(output_dir):
     """
     This func
@@ -28,26 +26,26 @@ def get_save_path(output_dir):
     os.makedirs(save_path, exist_ok=True)
     return save_path
 
+
 def worker_init_fn(worker_id):
-   """The function is designed for pytorch multi-process dataloader.
-   Note that we use the pytorch random generator to generate a base_seed.
-   Please try to be consistent.
+    """The function is designed for pytorch multi-process dataloader.
+    Note that we use the pytorch random generator to generate a base_seed.
+    Please try to be consistent.
 
-   References:
-       https://pytorch.org/docs/stable/notes/faq.html#dataloader-workers-random-seed
+    References:
+        https://pytorch.org/docs/stable/notes/faq.html#dataloader-workers-random-seed
 
-   """
-   base_seed = torch.IntTensor(1).random_().item()
-   # print(worker_id, base_seed)
-   np.random.seed(base_seed + worker_id)
+    """
+    base_seed = torch.IntTensor(1).random_().item()
+    np.random.seed(base_seed + worker_id)
 
 
 def dataLoader(config, dataset='syn', warp_input=False, train=True, val=True):
     import torchvision.transforms as transforms
     training_params = config.get('training', {})
-    workers_train = training_params.get('workers_train', 1) # 16
-    workers_val   = training_params.get('workers_val', 1) # 16
-        
+    workers_train = training_params.get('workers_train', 1)  # 16
+    workers_val = training_params.get('workers_val', 1)  # 16
+
     logging.info(f"workers_train: {workers_train}, workers_val: {workers_val}")
     data_transforms = {
         'train': transforms.Compose([
@@ -57,15 +55,12 @@ def dataLoader(config, dataset='syn', warp_input=False, train=True, val=True):
             transforms.ToTensor(),
         ]),
     }
-    # if dataset == 'syn':
-    #     from datasets.SyntheticDataset_gaussian import SyntheticDataset as Dataset
-    # else:
     Dataset = get_module('datasets', dataset)
     print(f"dataset: {dataset}")
 
     train_set = Dataset(
         transform=data_transforms['train'],
-        task = 'train',
+        task='train',
         **config['data'],
     )
     train_loader = torch.utils.data.DataLoader(
@@ -76,7 +71,7 @@ def dataLoader(config, dataset='syn', warp_input=False, train=True, val=True):
     )
     val_set = Dataset(
         transform=data_transforms['train'],
-        task = 'val',
+        task='val',
         **config['data'],
     )
     val_loader = torch.utils.data.DataLoader(
@@ -85,14 +80,15 @@ def dataLoader(config, dataset='syn', warp_input=False, train=True, val=True):
         num_workers=workers_val,
         worker_init_fn=worker_init_fn
     )
-    # val_set, val_loader = None, None
+
     return {'train_loader': train_loader, 'val_loader': val_loader,
             'train_set': train_set, 'val_set': val_set}
+
 
 def dataLoader_test(config, dataset='syn', warp_input=False, export_task='train'):
     import torchvision.transforms as transforms
     training_params = config.get('training', {})
-    workers_test = training_params.get('workers_test', 1) # 16
+    workers_test = training_params.get('workers_test', 1)  # 16
     logging.info(f"workers_test: {workers_test}")
 
     data_transforms = {
@@ -125,7 +121,6 @@ def dataLoader_test(config, dataset='syn', warp_input=False, export_task='train'
             num_workers=workers_test,
             worker_init_fn=worker_init_fn
         )
-    # elif dataset == 'Coco' or 'Kitti' or 'Tum':
     else:
         # from datasets.Kitti import Kitti
         logging.info(f"load dataset from : {dataset}")
@@ -144,6 +139,7 @@ def dataLoader_test(config, dataset='syn', warp_input=False, export_task='train'
         )
     return {'test_set': test_set, 'test_loader': test_loader}
 
+
 def get_module(path, name):
     import importlib
     if path == '':
@@ -152,9 +148,11 @@ def get_module(path, name):
         mod = importlib.import_module('{}.{}'.format(path, name))
     return getattr(mod, name)
 
+
 def get_model(name):
     mod = __import__('models.{}'.format(name), fromlist=[''])
     return getattr(mod, name)
+
 
 def modelLoader(model='SuperPointNet', **options):
     # create model
@@ -181,9 +179,9 @@ def pretrainedLoader(net, optimizer, epoch, path, mode='full', full_path=False):
 #         epoch = 0
     else:
         net.load_state_dict(checkpoint)
-        # net.load_state_dict(torch.load(path,map_location=lambda storage, loc: storage))
+
     return net, optimizer, epoch
+
 
 if __name__ == '__main__':
     net = modelLoader(model='SuperPointNet')
-
