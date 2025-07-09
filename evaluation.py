@@ -12,6 +12,9 @@ import cv2
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
+import torch
+from numpy.linalg import inv
+from sklearn.metrics import average_precision_score
 from tqdm import tqdm
 
 from evaluations.detector_evaluation import compute_repeatability
@@ -21,6 +24,12 @@ from utils.draw import plot_imgs
 
 
 matplotlib.use('Agg')  # solve error of tk
+
+
+def to3dim(img):
+    if img.ndim == 2:
+        img = img[:, :, np.newaxis]
+    return img
 
 
 def draw_matches_cv(data, matches, plot_points=True):
@@ -34,14 +43,10 @@ def draw_matches_cv(data, matches, plot_points=True):
         print(f"matches_pts: {matches_pts}")
         # keypoints1, keypoints2 = [], []
 
-    inliers = data['inliers'].astype(bool)
+    # inliers = data['inliers'].astype(bool)
     # matches = np.array(data['matches'])[inliers].tolist()
     # matches = matches[inliers].tolist()
 
-    def to3dim(img):
-        if img.ndim == 2:
-            img = img[:, :, np.newaxis]
-        return img
     img1 = to3dim(data['image1'])
     img2 = to3dim(data['image2'])
     img1 = np.concatenate([img1, img1, img1], axis=2)
@@ -61,7 +66,6 @@ def isfloat(value):
 def find_files_with_ext(directory, extension='.npz', if_int=True):
     # print(os.listdir(directory))
     list_of_files = []
-    import os
     if extension == ".npz":
         for l in os.listdir(directory):
             if l.endswith(extension):
@@ -70,12 +74,6 @@ def find_files_with_ext(directory, extension='.npz', if_int=True):
     if if_int:
         list_of_files = [e for e in list_of_files if isfloat(e[:-4])]
     return list_of_files
-
-
-def to3dim(img):
-    if img.ndim == 2:
-        img = img[:, :, np.newaxis]
-    return img
 
 
 def evaluate(args, **options):
@@ -111,8 +109,6 @@ def evaluate(args, **options):
         path_rep = path + '/repeatibility' + str(rep_thd)
         os.makedirs(path_rep, exist_ok=True)
 
-    # for i in range(2):
-    #     f = files[i]
     print(f"file: {files[0]}")
     files.sort(key=lambda x: int(x[:-4]))
     from numpy.linalg import norm
@@ -162,7 +158,6 @@ def evaluate(args, **options):
                 plt.tight_layout()
 
                 plt.savefig(path_rep + '/' + f_num + '.png', dpi=300, bbox_inches='tight')
-                pass
 
         if args.homography:
             # estimate result
@@ -175,7 +170,6 @@ def evaluate(args, **options):
             # compute matching score
 
             def warpLabels(pnts, homography, H, W):
-                import torch
                 """
                 input:
                     pnts: numpy
@@ -192,7 +186,6 @@ def evaluate(args, **options):
                 warped_pnts = filter_points(warped_pnts, torch.tensor([W, H])).round().long()
                 return warped_pnts.numpy()
 
-            from numpy.linalg import inv
             H, W = image.shape
             unwarped_pnts = warpLabels(warped_keypoints, inv(real_H), H, W)
             score = (result['inliers'].sum() * 2) / (keypoints.shape[0] + unwarped_pnts.shape[0])
@@ -216,7 +209,6 @@ def evaluate(args, **options):
                     mscores = tracker.get_mscores().T
 
                     # mAP
-                    # matches = data['matches']
                     print("matches: ", matches.shape)
                     print("mscores: ", mscores.shape)
                     print("mscore max: ", mscores.max(axis=0))
@@ -258,8 +250,6 @@ def evaluate(args, **options):
                     return inliers
 
                 def computeAP(m_test, m_score):
-                    from sklearn.metrics import average_precision_score
-
                     average_precision = average_precision_score(m_test, m_score)
                     print('Average precision-recall score: {0:0.2f}'.format(
                         average_precision))
