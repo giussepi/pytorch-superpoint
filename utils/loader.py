@@ -126,7 +126,6 @@ def dataLoader_test(config, dataset='syn', warp_input=False, export_task='train'
         logging.info(f"load dataset from : {dataset}")
         Dataset = get_module('datasets', dataset)
         test_set = Dataset(
-            export=True,
             task=export_task,
             **config['data'],
         )

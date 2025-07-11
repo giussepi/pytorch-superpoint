@@ -46,7 +46,7 @@ class Coco(data.Dataset):
         }
     }
 
-    def __init__(self, export=False, transform=None, task='train', **config):
+    def __init__(self, transform=None, task='train', **config):
 
         # Update config
         self.config = self.default_config
