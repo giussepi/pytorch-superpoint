@@ -177,7 +177,6 @@ def export_detector_homoAdapt_gpu(config, output_dir, args):
         pred:
             'prob' (keypoints): np (N1, 3)
     """
-    from utils.utils import pltImshow
     from utils.utils import saveImg
     from utils.draw import draw_keypoints
 
@@ -196,9 +195,7 @@ def export_detector_homoAdapt_gpu(config, output_dir, args):
     homoAdapt_iter = config["data"]["homography_adaptation"]["num"]
     conf_thresh = config["model"]["detection_threshold"]
     nn_thresh = 0.7
-    outputMatches = True
     count = 0
-    max_length = 5
     output_images = args.outputImg
     check_exist = True
 
