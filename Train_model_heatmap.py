@@ -94,10 +94,7 @@ class Train_model_heatmap(Train_model_frontend):
             self.descriptor_loss = batch_descriptor_loss_sparse
             self.desc_loss_type = "sparse"
 
-        # load model
-        # self.net = self.loadModel(*config['model'])
         self.printImportantConfig()
-        pass
 
     def detector_loss(self, input, target, mask=None, loss_type="softmax"):
         """
@@ -140,19 +137,16 @@ class Train_model_heatmap(Train_model_frontend):
 
         self.scalar_dict, self.images_dict, self.hist_dict = {}, {}, {}
         # get the inputs
-        # logging.info('get input img and label')
         img, labels_2D, mask_2D = (
             sample["image"],
             sample["labels_2D"],
             sample["valid_mask"],
         )
-        # img, labels = img.to(self.device), labels_2D.to(self.device)
 
         # variables
         batch_size, H, W = img.shape[0], img.shape[2], img.shape[3]
         self.batch_size = batch_size
         det_loss_type = self.config["model"]["detector_loss"]["loss_type"]
-        # print("batch_size: ", batch_size)
         Hc = H // self.cell_size
         Wc = W // self.cell_size
 
@@ -186,7 +180,6 @@ class Train_model_heatmap(Train_model_frontend):
                 if if_warp:
                     outs_warp = self.net(img_warp.to(self.device))
                     semi_warp, coarse_desc_warp = outs_warp["semi"], outs_warp["desc"]
-                pass
 
         # detector loss
         from utils.utils import labels2Dto3D
