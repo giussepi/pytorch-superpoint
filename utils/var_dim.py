@@ -23,9 +23,7 @@ def tensorto4d(inp):
 
 # torch
 # from utils.var_dim import squeezeToNumpy
+
+
 def squeezeToNumpy(tensor_arr):
     return tensor_arr.detach().cpu().numpy().squeeze()
-
-# from utils.var_dim import toNumpy
-def toNumpy(tensor):
-    return tensor.detach().cpu().numpy()

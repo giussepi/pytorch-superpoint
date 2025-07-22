@@ -125,7 +125,7 @@ class SuperPointNet_process(object):
           heatmap_nms_batch: np [batch, 1, H, W]
         """
         def to_floatTensor(x): return torch.from_numpy(x).type(torch.FloatTensor)
-        from utils.var_dim import toNumpy
+        from utils.utils import toNumpy
         heatmap_np = toNumpy(heatmap)
         # heatmap_nms
         if boxnms:
@@ -145,7 +145,6 @@ class SuperPointNet_process(object):
         self.heatmap = heatmap
         self.heatmap_nms_batch = heatmap_nms_batch
         return heatmap_nms_batch
-        pass
 
     @staticmethod
     def heatmap_nms(heatmap, nms_dist=4, conf_thresh=0.015):

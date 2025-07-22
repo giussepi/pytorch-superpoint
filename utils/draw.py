@@ -46,15 +46,6 @@ def plot_imgs(imgs, titles=None, cmap='brg', ylabel='', normalize=False, ax=None
     plt.tight_layout()
 
 
-# from utils.draw import img_overlap
-def img_overlap(img_r, img_g, img_gray):  # img_b repeat
-    img = np.concatenate((img_gray, img_gray, img_gray), axis=0)
-    img[0, :, :] += img_r[0, :, :]
-    img[1, :, :] += img_g[0, :, :]
-    img[img > 1] = 1
-    img[img < 0] = 0
-    return img
-
 def draw_keypoints(img, corners, color=(0, 255, 0), radius=3, s=3):
     '''
 
@@ -95,8 +86,9 @@ def draw_keypoints(img, corners, color=(0, 255, 0), radius=3, s=3):
 #         cv2.circle(img, tuple((s*c[:2]).astype(int)), radius, color, thickness=-1)
 #     return img
 
-def draw_matches(rgb1, rgb2, match_pairs, lw = 0.5, color='g', if_fig=True,
-                filename='matches.png', show=False):
+
+def draw_matches(rgb1, rgb2, match_pairs, lw=0.5, color='g', if_fig=True,
+                 filename='matches.png', show=False):
     '''
 
     :param rgb1:
@@ -115,11 +107,11 @@ def draw_matches(rgb1, rgb2, match_pairs, lw = 0.5, color='g', if_fig=True,
     h1, w1 = rgb1.shape[:2]
     h2, w2 = rgb2.shape[:2]
     canvas = np.zeros((max(h1, h2), w1 + w2, 3), dtype=rgb1.dtype)
-    canvas[:h1, :w1] = rgb1[:,:,np.newaxis]
-    canvas[:h2, w1:] = rgb2[:,:,np.newaxis]
+    canvas[:h1, :w1] = rgb1[:, :, np.newaxis]
+    canvas[:h2, w1:] = rgb2[:, :, np.newaxis]
     # fig = plt.figure(frameon=False)
     if if_fig:
-        fig = plt.figure(figsize=(15,5))
+        fig = plt.figure(figsize=(15, 5))
     plt.axis("off")
     plt.imshow(canvas, zorder=1)
 
@@ -145,7 +137,7 @@ def draw_matches(rgb1, rgb2, match_pairs, lw = 0.5, color='g', if_fig=True,
         color=color,
         zorder=2,
         # color=[0.0, 0.8, 0.0],
-    );
+    )
     plt.tight_layout()
     if filename is not None:
         plt.savefig(filename, dpi=300, bbox_inches='tight')
@@ -154,13 +146,13 @@ def draw_matches(rgb1, rgb2, match_pairs, lw = 0.5, color='g', if_fig=True,
         plt.show()
 
 
-
 # from utils.draw import draw_matches_cv
 def draw_matches_cv(data):
     keypoints1 = [cv2.KeyPoint(p[1], p[0], 1) for p in data['keypoints1']]
     keypoints2 = [cv2.KeyPoint(p[1], p[0], 1) for p in data['keypoints2']]
     inliers = data['inliers'].astype(bool)
     matches = np.array(data['matches'])[inliers].tolist()
+
     def to3dim(img):
         if img.ndim == 2:
             img = img[:, :, np.newaxis]
@@ -170,15 +162,14 @@ def draw_matches_cv(data):
     img1 = np.concatenate([img1, img1, img1], axis=2)
     img2 = np.concatenate([img2, img2, img2], axis=2)
     return cv2.drawMatches(img1, keypoints1, img2, keypoints2, matches,
-                           None, matchColor=(0,255,0), singlePointColor=(0, 0, 255))
+                           None, matchColor=(0, 255, 0), singlePointColor=(0, 0, 255))
 
 
-def drawBox(points, img, offset=np.array([0,0]), color=(0,255,0)):
-#     print("origin", points)
+def drawBox(points, img, offset=np.array([0, 0]), color=(0, 255, 0)):
+    #     print("origin", points)
     offset = offset[::-1]
-    points = points + offset    
+    points = points + offset
     points = points.astype(int)
     for i in range(len(points)):
-        img = img + cv2.line(np.zeros_like(img),tuple(points[-1+i]), tuple(points[i]), color,5)
+        img = img + cv2.line(np.zeros_like(img), tuple(points[-1+i]), tuple(points[i]), color, 5)
     return img
-

@@ -1,21 +1,16 @@
-"""util functions
-# many old functions, need to clean up
-# homography --> homography
-# warping
-# loss --> delete if useless
-"""
+# -*- coding: utf-8 -*-
+""" utils/utils.py """
 
+import datetime
+from pathlib import Path
+
+import cv2
 import numpy as np
 import torch
-from pathlib import Path
-import datetime
-import datetime
-from collections import OrderedDict
-import torch.nn.functional as F
-import torch.nn as nn
-###### check
-# from utils.nms_pytorch import box_nms as box_nms_retinaNet
+from torch import nn
+from torch.nn import functional as F
 from utils.d2s import DepthToSpace, SpaceToDepth
+
 
 def img_overlap(img_r, img_g, img_gray):  # img_b repeat
     def to_3d(img):
@@ -30,7 +25,14 @@ def img_overlap(img_r, img_g, img_gray):  # img_b repeat
     img[img < 0] = 0
     return img
 
+
 def thd_img(img, thd=0.015):
+    """
+    thresholding the image.
+    :param img:
+    :param thd:
+    :return:
+    """
     img[img < thd] = 0
     img[img >= thd] = 1
     return img
@@ -39,10 +41,16 @@ def thd_img(img, thd=0.015):
 def toNumpy(tensor):
     return tensor.detach().cpu().numpy()
 
+
+def to_floatTensor(x):
+    return torch.tensor(x).type(torch.FloatTensor)
+
+
 def save_path_formatter(args, parser):
     print("todo: save path")
     return Path('.')
-    pass
+
+
 '''
 def save_path_formatter(args, parser):
     def is_default(key, value):
@@ -75,6 +83,7 @@ def save_path_formatter(args, parser):
     # return ''
 '''
 
+
 def tensor2array(tensor, max_value=255, colormap='rainbow', channel_first=True):
     tensor = tensor.detach().cpu()
     if max_value is None:
@@ -96,18 +105,20 @@ def tensor2array(tensor, max_value=255, colormap='rainbow', channel_first=True):
         except ImportError:
             if tensor.ndimension() == 2:
                 tensor.unsqueeze_(2)
-            array = (tensor.expand(tensor.size(0), tensor.size(1), 3).numpy()/max_value).clip(0,1)
+            array = (tensor.expand(tensor.size(0), tensor.size(1), 3).numpy()/max_value).clip(0, 1)
         if channel_first:
             array = array.transpose(2, 0, 1)
 
     elif tensor.ndimension() == 3:
-        assert(tensor.size(0) == 3)
+        assert (tensor.size(0) == 3)
         array = 0.5 + tensor.numpy()*0.5
         if not channel_first:
             array = array.transpose(1, 2, 0)
     return array
 
 # from utils.utils import find_files_with_ext
+
+
 def find_files_with_ext(directory, extension='.npz'):
     # print(os.listdir(directory))
     list_of_files = []
@@ -119,6 +130,7 @@ def find_files_with_ext(directory, extension='.npz'):
                 # print(l)
         return list_of_files
 
+
 def save_checkpoint(save_path, net_state, epoch, filename='checkpoint.pth.tar'):
     file_prefix = ['superPointNet']
     # torch.save(net_state, save_path)
@@ -126,6 +138,7 @@ def save_checkpoint(save_path, net_state, epoch, filename='checkpoint.pth.tar'):
     torch.save(net_state, save_path/filename)
     print("save checkpoint to ", filename)
     pass
+
 
 def load_checkpoint(load_path, filename='checkpoint.pth.tar'):
     file_prefix = ['superPointNet']
@@ -148,14 +161,17 @@ def saveLoss(filename, iter, loss, task='train', **options):
         # myfile.write("iter: " + str(iter) + '\n')
         # myfile.write("output pairs: " + str(count) + '\n')
 
+
 def saveImg(img, filename):
     import cv2
     cv2.imwrite(filename, img)
+
 
 def pltImshow(img):
     from matplotlib import pyplot as plt
     plt.imshow(img)
     plt.show()
+
 
 def loadConfig(filename):
     import yaml
@@ -163,8 +179,9 @@ def loadConfig(filename):
         config = yaml.load(f)
     return config
 
+
 def append_csv(file='foo.csv', arr=[]):
-    import csv   
+    import csv
     # fields=['first','second','third']
     # pre = lambda i: ['{0:.3f}'.format(x) for x in i]
     with open(file, 'a') as f:
@@ -189,22 +206,23 @@ def save_checkpoint(save_path, dispnet_state, exp_pose_state, is_best, filename=
         for prefix in file_prefixes:
             shutil.copyfile(save_path/'{}_{}'.format(prefix,filename), save_path/'{}_model_best.pth.tar'.format(prefix))
 '''
-import cv2
+
+
 def sample_homography(inv_scale=3):
-  corner_img = np.array([(-1, -1), (-1, 1), (1, -1), (1, 1)])
-  # offset_r = 1 - 1/inv_scale
-  # img_offset = np.array([(-1, -1), (-1, offset_r), (offset_r, -1), (offset_r, offset_r)])
-  img_offset = corner_img
-  corner_map = (np.random.rand(4,2)-0.5)*2/(inv_scale + 0.01) + img_offset
-  matrix = cv2.getPerspectiveTransform(np.float32(corner_img), np.float32(corner_map))
-  return matrix
+    corner_img = np.array([(-1, -1), (-1, 1), (1, -1), (1, 1)])
+    # offset_r = 1 - 1/inv_scale
+    # img_offset = np.array([(-1, -1), (-1, offset_r), (offset_r, -1), (offset_r, offset_r)])
+    img_offset = corner_img
+    corner_map = (np.random.rand(4, 2)-0.5)*2/(inv_scale + 0.01) + img_offset
+    matrix = cv2.getPerspectiveTransform(np.float32(corner_img), np.float32(corner_map))
+    return matrix
 
 
 def sample_homographies(batch_size=1, scale=10, device='cpu'):
-    ## sample homography matrix
+    # sample homography matrix
     # mat_H = [sample_homography(inv_scale=scale) for i in range(batch_size)]
     mat_H = [sample_homography(inv_scale=scale) for i in range(batch_size)]
-    ##### debug
+    # debug
     # from utils.utils import sample_homo
     # mat_H = [sample_homo(image=np.zeros((1,1))) for i in range(batch_size)]
 
@@ -217,6 +235,7 @@ def sample_homographies(batch_size=1, scale=10, device='cpu'):
     mat_H_inv = torch.tensor(mat_H_inv, dtype=torch.float32)
     mat_H_inv = mat_H_inv.to(device)
     return mat_H, mat_H_inv
+
 
 def warpLabels(pnts, homography, H, W):
     import torch
@@ -262,26 +281,30 @@ def warp_points_np(points, homographies, device='cpu'):
     warped_points = warped_points[:, :, :2] / warped_points[:, :, 2:]
     return warped_points
 
+
 def homography_scaling(homography, H, W):
     trans = np.array([[2./W, 0., -1], [0., 2./H, -1], [0., 0., 1.]])
     homography = np.linalg.inv(trans) @ homography @ trans
     return homography
+
 
 def homography_scaling_torch(homography, H, W):
     trans = torch.tensor([[2./W, 0., -1], [0., 2./H, -1], [0., 0., 1.]])
     homography = (trans.inverse() @ homography @ trans)
     return homography
 
+
 def filter_points(points, shape, return_mask=False):
-    ### check!
+    # check!
     points = points.float()
     shape = shape.float()
     mask = (points >= 0) * (points <= shape-1)
     mask = (torch.prod(mask, dim=-1) == 1)
     if return_mask:
         return points[mask], mask
-    return points [mask]
+    return points[mask]
     # return points [torch.prod(mask, dim=-1) == 1]
+
 
 def warp_points(points, homographies, device='cpu'):
     """
@@ -302,16 +325,16 @@ def warp_points(points, homographies, device='cpu'):
     batch_size = homographies.shape[0]
     points = torch.cat((points.float(), torch.ones((points.shape[0], 1)).to(device)), dim=1)
     points = points.to(device)
-    homographies = homographies.view(batch_size*3,3)
+    homographies = homographies.view(batch_size*3, 3)
     # warped_points = homographies*points
     # points = points.double()
-    warped_points = homographies@points.transpose(0,1)
+    warped_points = homographies@points.transpose(0, 1)
     # warped_points = np.tensordot(homographies, points.transpose(), axes=([2], [0]))
     # normalize the points
     warped_points = warped_points.view([batch_size, 3, -1])
     warped_points = warped_points.transpose(2, 1)
     warped_points = warped_points[:, :, :2] / warped_points[:, :, 2:]
-    return warped_points[0,:,:] if no_batches else warped_points
+    return warped_points[0, :, :] if no_batches else warped_points
 
 
 # from utils.utils import inv_warp_image_batch
@@ -333,9 +356,9 @@ def inv_warp_image_batch(img, mat_homo_inv, device='cpu', mode='bilinear'):
     '''
     # compute inverse warped points
     if len(img.shape) == 2 or len(img.shape) == 3:
-        img = img.view(1,1,img.shape[0], img.shape[1])
+        img = img.view(1, 1, img.shape[0], img.shape[1])
     if len(mat_homo_inv.shape) == 2:
-        mat_homo_inv = mat_homo_inv.view(1,3,3)
+        mat_homo_inv = mat_homo_inv.view(1, 3, 3)
 
     Batch, channel, H, W = img.shape
     coor_cells = torch.stack(torch.meshgrid(torch.linspace(-1, 1, W), torch.linspace(-1, 1, H)), dim=2)
@@ -349,6 +372,7 @@ def inv_warp_image_batch(img, mat_homo_inv, device='cpu', mode='bilinear'):
 
     warped_img = F.grid_sample(img, src_pixel_coords, mode=mode, align_corners=True)
     return warped_img
+
 
 def inv_warp_image(img, mat_homo_inv, device='cpu', mode='bilinear'):
     '''
@@ -399,10 +423,11 @@ def labels2Dto3D(labels, cell_size, add_dustbin=True):
         # print('dust: ', dustbin.shape)
         # labels = torch.cat((labels, dustbin.view(batch_size, 1, Hc, Wc)), dim=1)
         labels = torch.cat((labels, dustbin.view(batch_size, 1, Hc, Wc)), dim=1)
-        ## norm
+        # norm
         dn = labels.sum(dim=1)
         labels = labels.div(torch.unsqueeze(dn, 1))
     return labels
+
 
 def labels2Dto3D_flattened(labels, cell_size):
     '''
@@ -433,7 +458,6 @@ def labels2Dto3D_flattened(labels, cell_size):
     labels = torch.cat((labels*2, dustbin.view(batch_size, 1, Hc, Wc)), dim=1)
     labels = torch.argmax(labels, dim=1)
     return labels
-
 
 
 def old_flatten64to1(semi, tensor=False):
@@ -511,11 +535,11 @@ def flattenDetection(semi, tensor=False):
     # --- Process points.
     # dense = nn.functional.softmax(semi, dim=0) # [65, Hc, Wc]
     if batch:
-        dense = nn.functional.softmax(semi, dim=1) # [batch, 65, Hc, Wc]
+        dense = nn.functional.softmax(semi, dim=1)  # [batch, 65, Hc, Wc]
         # Remove dustbin.
         nodust = dense[:, :-1, :, :]
     else:
-        dense = nn.functional.softmax(semi, dim=0) # [65, Hc, Wc]
+        dense = nn.functional.softmax(semi, dim=0)  # [65, Hc, Wc]
         nodust = dense[:-1, :, :].unsqueeze(0)
     # Reshape to get full resolution heatmap.
     # heatmap = flatten64to1(nodust, tensor=True) # [1, H, W]
@@ -523,7 +547,6 @@ def flattenDetection(semi, tensor=False):
     heatmap = depth2space(nodust)
     heatmap = heatmap.squeeze(0) if not batch else heatmap
     return heatmap
-
 
 
 def sample_homo(image):
@@ -539,8 +562,6 @@ def sample_homo(image):
     #     np.stack()
     return mat
 
-import cv2
-
 
 def getPtsFromHeatmap(heatmap, conf_thresh, nms_dist):
     '''
@@ -554,7 +575,7 @@ def getPtsFromHeatmap(heatmap, conf_thresh, nms_dist):
 
     H, W = heatmap.shape[0], heatmap.shape[1]
     xs, ys = np.where(heatmap >= conf_thresh)  # Confidence threshold.
-    sparsemap = (heatmap >= conf_thresh)
+    # sparsemap = (heatmap >= conf_thresh)
     if len(xs) == 0:
         return np.zeros((3, 0))
     pts = np.zeros((3, len(xs)))  # Populate point data sized 3xN.
@@ -572,10 +593,11 @@ def getPtsFromHeatmap(heatmap, conf_thresh, nms_dist):
     pts = pts[:, ~toremove]
     return pts
 
+
 def box_nms(prob, size, iou=0.1, min_prob=0.01, keep_top_k=0):
-    # requires https://github.com/open-mmlab/mmdetection. 
+    # requires https://github.com/open-mmlab/mmdetection.
     # Warning : BUILD FROM SOURCE using command MMCV_WITH_OPS=1 pip install -e
-    # from mmcv.ops import nms as nms_mmdet 
+    # from mmcv.ops import nms as nms_mmdet
     from torchvision.ops import nms
 
     """Performs non maximum suppression on the heatmap by considering hypothetical
@@ -588,12 +610,12 @@ def box_nms(prob, size, iou=0.1, min_prob=0.01, keep_top_k=0):
     min_prob: a threshold under which all probabilities are discarded before NMS.
     keep_top_k: an integer, the number of top scores to keep.
     """
-    pts = torch.nonzero(prob > min_prob).float() # [N, 2]
+    pts = torch.nonzero(prob > min_prob).float()  # [N, 2]
     prob_nms = torch.zeros_like(prob)
     if pts.nelement() == 0:
         return prob_nms
     size = torch.tensor(size/2.).cuda()
-    boxes = torch.cat([pts-size, pts+size], dim=1) # [N, 4]
+    boxes = torch.cat([pts-size, pts+size], dim=1)  # [N, 4]
     scores = prob[pts[:, 0].long(), pts[:, 1].long()]
     if keep_top_k != 0:
         indices = nms(boxes, scores, iou)
@@ -611,6 +633,7 @@ def box_nms(prob, size, iou=0.1, min_prob=0.01, keep_top_k=0):
     scores = torch.index_select(scores, 0, indices)
     prob_nms[pts[:, 0].long(), pts[:, 1].long()] = scores
     return prob_nms
+
 
 def nms_fast(in_corners, H, W, dist_thresh):
     """
@@ -716,6 +739,7 @@ def normPts(pts, shape):
     pts = pts/shape*2 - 1
     return pts
 
+
 def denormPts(pts, shape):
     """
     denormalize pts back to H, W
@@ -732,13 +756,12 @@ def denormPts(pts, shape):
 #     # concat image and dense_desc
 #     # extract patches
 
-#     # 
+#     #
 #     pass
 
 
-def descriptor_loss(descriptors, descriptors_warped, homographies, mask_valid=None, 
+def descriptor_loss(descriptors, descriptors_warped, homographies, mask_valid=None,
                     cell_size=8, lamda_d=250, device='cpu', descriptor_dist=4, **config):
-
     '''
     Compute descriptor loss from descriptors_warped and given homographies
 
@@ -763,7 +786,7 @@ def descriptor_loss(descriptors, descriptors_warped, homographies, mask_valid=No
     homographies = homographies.to(device)
     # config
     from utils.utils import warp_points
-    lamda_d = lamda_d # 250
+    lamda_d = lamda_d  # 250
     margin_pos = 1
     margin_neg = 0.2
     batch_size, Hc, Wc = descriptors.shape[0], descriptors.shape[2], descriptors.shape[3]
@@ -779,17 +802,18 @@ def descriptor_loss(descriptors, descriptors_warped, homographies, mask_valid=No
         coor_cells = torch.stack(torch.meshgrid(torch.arange(Hc), torch.arange(Wc)), dim=2)
         coor_cells = coor_cells.type(torch.FloatTensor).to(device)
         coor_cells = coor_cells * cell_size + cell_size // 2
-        ## coord_cells is now a grid containing the coordinates of the Hc x Wc
-        ## center pixels of the 8x8 cells of the image
+        # coord_cells is now a grid containing the coordinates of the Hc x Wc
+        # center pixels of the 8x8 cells of the image
 
         # coor_cells = coor_cells.view([-1, Hc, Wc, 1, 1, 2])
         coor_cells = coor_cells.view([-1, 1, 1, Hc, Wc, 2])  # be careful of the order
         # warped_coor_cells = warp_points(coor_cells.view([-1, 2]), homographies, device)
         warped_coor_cells = normPts(coor_cells.view([-1, 2]), shape)
-        warped_coor_cells = torch.stack((warped_coor_cells[:,1], warped_coor_cells[:,0]), dim=1) # (y, x) to (x, y)
+        warped_coor_cells = torch.stack((warped_coor_cells[:, 1], warped_coor_cells[:, 0]), dim=1)  # (y, x) to (x, y)
         warped_coor_cells = warp_points(warped_coor_cells, homographies, device)
 
-        warped_coor_cells = torch.stack((warped_coor_cells[:, :, 1], warped_coor_cells[:, :, 0]), dim=2)  # (batch, x, y) to (batch, y, x)
+        # (batch, x, y) to (batch, y, x)
+        warped_coor_cells = torch.stack((warped_coor_cells[:, :, 1], warped_coor_cells[:, :, 0]), dim=2)
 
         shape_cell = torch.tensor([H//cell_size, W//cell_size]).type(torch.FloatTensor).to(device)
         # warped_coor_mask = denormPts(warped_coor_cells, shape_cell)
@@ -801,9 +825,9 @@ def descriptor_loss(descriptors, descriptors_warped, homographies, mask_valid=No
         # compute the pairwise distance
         cell_distances = coor_cells - warped_coor_cells
         cell_distances = torch.norm(cell_distances, dim=-1)
-        ##### check
+        # check
     #     print("descriptor_dist: ", descriptor_dist)
-        mask = cell_distances <= descriptor_dist # 0.5 # trick
+        mask = cell_distances <= descriptor_dist  # 0.5 # trick
 
         mask = mask.type(torch.FloatTensor).to(device)
 
@@ -814,7 +838,7 @@ def descriptor_loss(descriptors, descriptors_warped, homographies, mask_valid=No
     descriptors_warped = descriptors_warped.view((batch_size, 1, 1, Hc, Wc, -1))
     dot_product_desc = descriptors * descriptors_warped
     dot_product_desc = dot_product_desc.sum(dim=-1)
-    ## dot_product_desc.shape = [batch_size, Hc, Wc, Hc, Wc, desc_len]
+    # dot_product_desc.shape = [batch_size, Hc, Wc, Hc, Wc, desc_len]
 
     # hinge loss
     positive_dist = torch.max(margin_pos - dot_product_desc, torch.tensor(0.).to(device))
@@ -830,8 +854,8 @@ def descriptor_loss(descriptors, descriptors_warped, homographies, mask_valid=No
 
     loss_desc = lamda_d * mask * positive_dist + (1 - mask) * negative_dist
     loss_desc = loss_desc * mask_valid
-        # mask_validg = torch.ones_like(mask)
-    ##### bug in normalization
+    # mask_validg = torch.ones_like(mask)
+    # bug in normalization
     normalization = (batch_size * (mask_valid.sum()+1) * Hc * Wc)
     pos_sum = (lamda_d * mask * positive_dist/normalization).sum()
     neg_sum = ((1 - mask) * negative_dist/normalization).sum()
@@ -839,6 +863,7 @@ def descriptor_loss(descriptors, descriptors_warped, homographies, mask_valid=No
     # loss_desc = loss_desc.sum() / (batch_size * Hc * Wc)
     # return loss_desc, mask, mask_valid, positive_dist, negative_dist
     return loss_desc, mask, pos_sum, neg_sum
+
 
 """
 pos_pairs = mask * positive_dist
@@ -868,31 +893,34 @@ def sumto2D(ndtensor):
     # output tensor: [batch_size, Hc, Wc]
     return ndtensor.sum(dim=1).sum(dim=1)
 
+
 def mAP(pred_batch, labels_batch):
     pass
+
 
 def precisionRecall_torch(pred, labels):
     offset = 10**-6
     assert pred.size() == labels.size(), 'Sizes of pred, labels should match when you get the precision/recall!'
-    precision = torch.sum(pred*labels) / (torch.sum(pred)+ offset)
+    precision = torch.sum(pred*labels) / (torch.sum(pred) + offset)
     recall = torch.sum(pred*labels) / (torch.sum(labels) + offset)
     if precision.item() > 1.:
         print(pred)
         print(labels)
         import scipy.io.savemat as savemat
         savemat('pre_recall.mat', {'pred': pred, 'labels': labels})
-    assert precision.item() <=1. and precision.item() >= 0.
+    assert precision.item() <= 1. and precision.item() >= 0.
     return {'precision': precision, 'recall': recall}
+
 
 def precisionRecall(pred, labels, thd=None):
     offset = 10**-6
     if thd is None:
-        precision = np.sum(pred*labels) / (np.sum(pred)+ offset)
+        precision = np.sum(pred*labels) / (np.sum(pred) + offset)
         recall = np.sum(pred*labels) / (np.sum(labels) + offset)
     return {'precision': precision, 'recall': recall}
 
+
 def getWriterPath(task='train', exper_name='', date=True):
-    import datetime
     prefix = 'runs/'
     str_date_time = ''
     if exper_name != '':
@@ -900,6 +928,7 @@ def getWriterPath(task='train', exper_name='', date=True):
     if date:
         str_date_time = datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
     return prefix + task + '/' + exper_name + str_date_time
+
 
 def crop_or_pad_choice(in_num_points, out_num_points, shuffle=False):
     # Adapted from https://github.com/haosulab/frustum_pointnet/blob/635c938f18b9ec1de2de717491fb217df84d2d93/fpointnet/data/datasets/utils.py
@@ -916,7 +945,7 @@ def crop_or_pad_choice(in_num_points, out_num_points, shuffle=False):
         choice = np.random.permutation(in_num_points)
     else:
         choice = np.arange(in_num_points)
-    assert out_num_points > 0, 'out_num_points = %d must be positive int!'%out_num_points
+    assert out_num_points > 0, 'out_num_points = %d must be positive int!' % out_num_points
     if in_num_points >= out_num_points:
         choice = choice[:out_num_points]
     else:

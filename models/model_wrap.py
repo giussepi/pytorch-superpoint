@@ -5,13 +5,9 @@
 
 import numpy as np
 import torch
-from torch.autograd import Variable
-import torch.backends.cudnn as cudnn
-import torch.optim
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.utils.data
-from tqdm import tqdm
+from torch import nn
+
+from utils.utils import toNumpy
 
 
 def labels2Dto3D(cell_size, labels):
@@ -28,10 +24,6 @@ def labels2Dto3D(cell_size, labels):
     labels = np.concatenate((labels, dustbin[np.newaxis, :, :]), axis=0)
     return labels
 
-def toNumpy(tensor):
-    return tensor.detach().cpu().numpy()
-
-
 
 class SuperPointFrontend_torch(object):
     """ Wrapper around pytorch net to help with pre and post image processing. """
@@ -45,7 +37,7 @@ class SuperPointFrontend_torch(object):
     '''
 
     def __init__(self, config, weights_path, nms_dist, conf_thresh, nn_thresh,
-                 cuda=False, trained=False, device='cpu',grad=False, load=True):
+                 cuda=False, trained=False, device='cpu', grad=False, load=True):
         self.config = config
 
         self.name = 'SuperPoint'
@@ -61,7 +53,7 @@ class SuperPointFrontend_torch(object):
         self.pts_subpixel = None
         self.patches = None
 
-        self.device=device
+        self.device = device
         self.subpixel = False
         if self.config['model']['subpixel']['enable']:
             self.subpixel = True
@@ -202,7 +194,6 @@ class SuperPointFrontend_torch(object):
         input:
             pts: tensor [N x 2]
         """
-        from utils.utils import toNumpy
         from utils.losses import extract_patch_from_points
         from utils.losses import soft_argmax_2d
         from utils.losses import norm_patches
@@ -228,7 +219,7 @@ class SuperPointFrontend_torch(object):
         dxdy = soft_argmax_2d(patches_torch, normalized_coordinates=False)
         # print("dxdy: ", dxdy.shape)
         points = pts
-        points[:,:2] = points[:,:2] + dxdy.numpy().squeeze() - patch_size//2
+        points[:, :2] = points[:, :2] + dxdy.numpy().squeeze() - patch_size//2
         self.patches = patches_torch.numpy().squeeze()
         self.pts_subpixel = [points.transpose().copy()]
         return self.pts_subpixel.copy()
@@ -248,7 +239,6 @@ class SuperPointFrontend_torch(object):
         patches = np.stack(patches)
         return patches
 
-
     def getPtsFromHeatmap(self, heatmap):
         '''
         :param self:
@@ -264,7 +254,7 @@ class SuperPointFrontend_torch(object):
         if len(xs) == 0:
             return np.zeros((3, 0))
         pts = np.zeros((3, len(xs)))  # Populate point data sized 3xN.
-        pts[0, :] = ys # abuse of ys, xs
+        pts[0, :] = ys  # abuse of ys, xs
         pts[1, :] = xs
         pts[2, :] = heatmap[xs, ys]  # check the (x, y) here
         pts, _ = self.nms_fast(pts, H, W, dist_thresh=self.nms_dist)  # Apply NMS.
@@ -298,7 +288,6 @@ class SuperPointFrontend_torch(object):
             desc /= np.linalg.norm(desc, axis=0)[np.newaxis, :]
         return desc
 
-
     def subpixel_predict(self, pred_res, points, verbose=False):
         """
         input:
@@ -311,11 +300,13 @@ class SuperPointFrontend_torch(object):
         if points.shape[1] == 0:
             pts_subpixel = np.zeros((D, 0))
         else:
-            points_res = pred_res[:,points[1,:].astype(int), points[0,:].astype(int)]
+            points_res = pred_res[:, points[1, :].astype(int), points[0, :].astype(int)]
             pts_subpixel = points.copy()
-            if verbose: print("before: ", pts_subpixel[:,:5])
-            pts_subpixel[:2,:] += points_res
-            if verbose: print("after: ", pts_subpixel[:,:5])
+            if verbose:
+                print("before: ", pts_subpixel[:, :5])
+            pts_subpixel[:2, :] += points_res
+            if verbose:
+                print("after: ", pts_subpixel[:, :5])
         return pts_subpixel
         pass
 
@@ -360,7 +351,7 @@ class SuperPointFrontend_torch(object):
         # depth2space = DepthToSpace(8)
         # print(semi.shape)
         # heatmap = depth2space(semi[:,:-1,:,:]).squeeze(0)
-        ## need to change for batches
+        # need to change for batches
 
         if onlyHeatmap:
             return heatmap
@@ -369,10 +360,8 @@ class SuperPointFrontend_torch(object):
         # pts = [self.getPtsFromHeatmap(heatmap[i,:,:,:].cpu().detach().numpy().squeeze()).transpose() for i in range(batch_size)]
         # pts = [self.getPtsFromHeatmap(heatmap[i,:,:,:].cpu().detach().numpy().squeeze()) for i in range(batch_size)]
         # print("heapmap shape: ", heatmap.shape)
-        pts = [self.getPtsFromHeatmap(heatmap[i,:,:,:].cpu().detach().numpy()) for i in range(batch_size)]
+        pts = [self.getPtsFromHeatmap(heatmap[i, :, :, :].cpu().detach().numpy()) for i in range(batch_size)]
         self.pts = pts
-        
-
 
         if self.subpixel:
             labels_res = outs[2]
@@ -392,21 +381,22 @@ class SuperPointFrontend_torch(object):
         # m = nn.Upsample(scale_factor=(1, self.cell, self.cell), mode='bilinear')
         dense_desc = nn.functional.interpolate(coarse_desc, scale_factor=(self.cell, self.cell), mode='bilinear')
         # norm the descriptor
+
         def norm_desc(desc):
-            dn = torch.norm(desc, p=2, dim=1) # Compute the norm.
-            desc = desc.div(torch.unsqueeze(dn, 1)) # Divide by norm to normalize.
+            dn = torch.norm(desc, p=2, dim=1)  # Compute the norm.
+            desc = desc.div(torch.unsqueeze(dn, 1))  # Divide by norm to normalize.
             return desc
         dense_desc = norm_desc(dense_desc)
 
         # extract descriptors
         dense_desc_cpu = dense_desc.cpu().detach().numpy()
         # pts_desc = [dense_desc_cpu[i, :, pts[i][:, 1].astype(int), pts[i][:, 0].astype(int)] for i in range(len(pts))]
-        pts_desc = [dense_desc_cpu[i, :, pts[i][1,:].astype(int), pts[i][0, :].astype(int)].transpose() for i in range(len(pts))]
+        pts_desc = [dense_desc_cpu[i, :, pts[i][1, :].astype(
+            int), pts[i][0, :].astype(int)].transpose() for i in range(len(pts))]
 
         if self.subpixel:
             return self.pts_subpixel, pts_desc, dense_desc, heatmap
         return pts, pts_desc, dense_desc, heatmap
-
 
 
 class PointTracker(object):
@@ -632,5 +622,3 @@ class PointTracker(object):
                 if i == N - 2:
                     clr2 = (255, 0, 0)
                     cv2.circle(out, p2, stroke, clr2, -1, lineType=16)
-
-

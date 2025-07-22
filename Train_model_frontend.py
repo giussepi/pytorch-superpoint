@@ -10,52 +10,21 @@ from pathlib import Path
 
 import numpy as np
 import torch
-# from torch.autograd import Variable
-# import torch.backends.cudnn as cudnn
-import torch.optim
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.utils.data
 import yaml
+from torch import nn, optim
 from tqdm import tqdm
 
 from utils.loader import dataLoader, modelLoader, pretrainedLoader
+from utils.losses import extract_patches
 from utils.tools import dict_update
-from utils.utils import labels2Dto3D, flattenDetection, labels2Dto3D_flattened
-from utils.utils import saveImg  # pltImshow
-from utils.utils import precisionRecall_torch
-from utils.utils import save_checkpoint
-
-
-def thd_img(img, thd=0.015):
-    """
-    thresholding the image.
-    :param img:
-    :param thd:
-    :return:
-    """
-    img[img < thd] = 0
-    img[img >= thd] = 1
-    return img
-
-
-def toNumpy(tensor):
-    return tensor.detach().cpu().numpy()
-
-
-def img_overlap(img_r, img_g, img_gray):  # img_b repeat
-    img = np.concatenate((img_gray, img_gray, img_gray), axis=0)
-    img[0, :, :] += img_r[0, :, :]
-    img[1, :, :] += img_g[0, :, :]
-    img[img > 1] = 1
-    img[img < 0] = 0
-    return img
+from utils.utils import (labels2Dto3D, flattenDetection, labels2Dto3D_flattened,
+                         saveImg, precisionRecall_torch, save_checkpoint, toNumpy, thd_img, img_overlap,
+                         getPtsFromHeatmap, box_nms)
 
 
 class Train_model_frontend(object):
     """
-    # This is the base class for training classes. Wrap pytorch net to help training process.
-
+    This is the base class for training classes. Wrap pytorch net to help training process.
     """
 
     default_config = {
@@ -70,7 +39,7 @@ class Train_model_frontend(object):
         ## default dimension:
             heatmap: torch (batch_size, H, W, 1)
             dense_desc: torch (batch_size, H, W, 256)
-            pts: [batch_size, np (N, 3)]
+v            pts: [batch_size, np (N, 3)]
             desc: [batch_size, np(256, N)]
 
         :param config:
@@ -127,11 +96,7 @@ class Train_model_frontend(object):
                 "utils.losses", self.config["model"]["subpixel"]["loss_func"]
             )
 
-        # load model
-        # self.net = self.loadModel(*config['model'])
         self.printImportantConfig()
-
-        pass
 
     def printImportantConfig(self):
         """
@@ -150,7 +115,6 @@ class Train_model_frontend(object):
             print(item, ": ", self.desc_params[item])
 
         print("=" * 32)
-        pass
 
     def dataParallel(self):
         """
@@ -162,7 +126,6 @@ class Train_model_frontend(object):
         self.optimizer = self.adamOptim(
             self.net, lr=self.config["model"]["learning_rate"]
         )
-        pass
 
     def adamOptim(self, net, lr):
         """
@@ -172,9 +135,8 @@ class Train_model_frontend(object):
         :return:
         """
         print("adam optimizer")
-        import torch.optim as optim
-
         optimizer = optim.Adam(net.parameters(), lr=lr, betas=(0.9, 0.999))
+
         return optimizer
 
     def loadModel(self):
@@ -194,7 +156,6 @@ class Train_model_frontend(object):
         # new model or load pretrained
         if self.config["retrain"] == True:
             logging.info("New model")
-            pass
         else:
             path = self.config["pretrained"]
             mode = "" if path[-4:] == ".pth" else "full"  # the suffix is '.pth' or 'tar.gz'
@@ -204,16 +165,15 @@ class Train_model_frontend(object):
             )
             logging.info("successfully load pretrained model from: %s", path)
 
-        def setIter(n_iter):
-            if self.config["reset_iter"]:
-                logging.info("reset iterations to 0")
-                n_iter = 0
-            return n_iter
-
         self.net = net
         self.optimizer = optimizer
-        self.n_iter = setIter(n_iter)
-        pass
+        self.n_iter = self.setIter(n_iter)
+
+    def setIter(self, n_iter):
+        if self.config["reset_iter"]:
+            logging.info("reset iterations to 0")
+            n_iter = 0
+        return n_iter
 
     @property
     def writer(self):
@@ -221,7 +181,6 @@ class Train_model_frontend(object):
         # writer for tensorboard
         :return:
         """
-        # print("get writer")
         return self._writer
 
     @writer.setter
@@ -296,8 +255,6 @@ class Train_model_frontend(object):
                     logging.info("End training: %d", self.n_iter)
                     break
 
-        pass
-
     def getLabels(self, labels_2D, cell_size, device="cpu"):
         """
         # transform 2D labels to 3D shape for training
@@ -348,6 +305,21 @@ class Train_model_frontend(object):
         loss = loss / (mask_3D_flattened.sum() + 1e-10)
         return loss
 
+    @staticmethod
+    def get_points_loss(points_res, pred_res):
+        loss = points_res - pred_res
+        loss = torch.norm(loss, p=2, dim=-1).mean()
+        return loss
+
+    @staticmethod
+    def label_to_points(labels_res, points):
+        labels_res = labels_res.transpose(1, 2).transpose(2, 3).unsqueeze(1)
+        points_res = labels_res[
+            points[:, 0], points[:, 1], points[:, 2], points[:, 3], :
+        ]  # tensor [N, 2]
+
+        return points_res
+
     def train_val_sample(self, sample, n_iter=0, train=False):
         """
         # deprecated: default train_val_sample
@@ -361,25 +333,18 @@ class Train_model_frontend(object):
 
         losses = {}
         # get the inputs
-        # logging.info('get input img and label')
         img, labels_2D, mask_2D = (
             sample["image"],
             sample["labels_2D"],
             sample["valid_mask"],
         )
-        # img, labels = img.to(self.device), labels_2D.to(self.device)
-
         # variables
         batch_size, H, W = img.shape[0], img.shape[2], img.shape[3]
         self.batch_size = batch_size
-        # print("batch_size: ", batch_size)
         Hc = H // self.cell_size
         Wc = W // self.cell_size
 
         # warped images
-        # img_warp, labels_warp_2D, mask_warp_2D = sample['warped_img'].to(self.device), \
-        #     sample['warped_labels'].to(self.device), \
-        #     sample['warped_valid_mask'].to(self.device)
         img_warp, labels_warp_2D, mask_warp_2D = (
             sample["warped_img"],
             sample["warped_labels"],
@@ -387,8 +352,6 @@ class Train_model_frontend(object):
         )
 
         # homographies
-        # mat_H, mat_H_inv = \
-        # sample['homographies'].to(self.device), sample['inv_homographies'].to(self.device)
         mat_H, mat_H_inv = sample["homographies"], sample["inv_homographies"]
 
         # zero the parameter gradients
@@ -396,7 +359,6 @@ class Train_model_frontend(object):
 
         # forward + backward + optimize
         if train:
-            # print("img: ", img.shape, ", img_warp: ", img_warp.shape)
             outs, outs_warp = (
                 self.net(img.to(self.device)),
                 self.net(img_warp.to(self.device), subpixel=self.subpixel),
@@ -411,7 +373,6 @@ class Train_model_frontend(object):
                 )
                 semi, coarse_desc = outs[0], outs[1]
                 semi_warp, coarse_desc_warp = outs_warp[0], outs_warp[1]
-                pass
 
         # detector loss
         # get labels, masks, loss for detection
@@ -434,12 +395,7 @@ class Train_model_frontend(object):
 
         mask_desc = mask_3D_flattened.unsqueeze(1)
 
-        # print("mask_desc: ", mask_desc.shape)
-        # print("mask_warp_2D: ", mask_warp_2D.shape)
-
         # descriptor loss
-
-        # if self.desc_loss_type == 'dense':
         loss_desc, mask, positive_dist, negative_dist = self.descriptor_loss(
             coarse_desc,
             coarse_desc_warp,
@@ -487,7 +443,6 @@ class Train_model_frontend(object):
 
             # extract the patches from labels
             label_idx = labels_2D[...].nonzero()
-            from utils.losses import extract_patches
 
             patch_size = 32
             patches = extract_patches(
@@ -498,14 +453,7 @@ class Train_model_frontend(object):
             # patches = extract_patches(label_idx.to(device), labels_2D.to(device), patch_size=15) # tensor [N, patch_size, patch_size]
             print("patches: ", patches.shape)
 
-            def label_to_points(labels_res, points):
-                labels_res = labels_res.transpose(1, 2).transpose(2, 3).unsqueeze(1)
-                points_res = labels_res[
-                    points[:, 0], points[:, 1], points[:, 2], points[:, 3], :
-                ]  # tensor [N, 2]
-                return points_res
-
-            points_res = label_to_points(labels_warped_res, label_idx)
+            points_res = self.label_to_points(labels_warped_res, label_idx)
 
             num_patches_max = 500
             # feed into the network
@@ -514,12 +462,7 @@ class Train_model_frontend(object):
             )  # tensor [1, N, 2]
 
             # loss function
-            def get_loss(points_res, pred_res):
-                loss = points_res - pred_res
-                loss = torch.norm(loss, p=2, dim=-1).mean()
-                return loss
-
-            loss = get_loss(points_res[:num_patches_max, ...].to(self.device), pred_res)
+            loss = self.get_points_loss(points_res[:num_patches_max, ...].to(self.device), pred_res)
 
             losses.update({"subpix_loss": subpix_loss})
 
@@ -534,7 +477,6 @@ class Train_model_frontend(object):
                 "negative_dist": negative_dist,
             }
         )
-        # print("losses: ", losses)
 
         if train:
             loss.backward()
@@ -593,7 +535,6 @@ class Train_model_frontend(object):
             },
             self.n_iter,
         )
-        pass
 
     def add_single_image_to_tb(self, task, img_tensor, n_iter, name="img"):
         """
@@ -638,8 +579,6 @@ class Train_model_frontend(object):
         :param task:
         :return:
         """
-        # print("add images to tensorboard")
-
         n_iter = self.n_iter
         semi_flat = flattenDetection(semi[0, :, :, :])
         semi_warp_flat = flattenDetection(semi_warp[0, :, :, :])
@@ -677,8 +616,6 @@ class Train_model_frontend(object):
             toNumpy(img_warp[0, :, :, :]),
         )
 
-        # writer.add_image(task + '_mask_valid_first_layer', mask_warp[0, :, :, :], n_iter)
-        # writer.add_image(task + '_mask_valid_last_layer', mask_warp[-1, :, :, :], n_iter)
         # print to check
         # print("mask_2D shape: ", mask_warp_2D.shape)
         # print("mask_3D_flattened shape: ", mask_3D_flattened.shape)
@@ -690,8 +627,6 @@ class Train_model_frontend(object):
                 self.writer.add_image(
                     task + "-mask_warp_3D_flattened", mask_3D_flattened[i, :, :], n_iter
                 )
-        # self.writer.add_image(task + '-mask_warp_origin-1', mask_warp_2D[1, :, :, :], n_iter)
-        # self.writer.add_image(task + '-mask_warp_3D_flattened-1', mask_3D_flattened[1, :, :], n_iter)
         self.writer.add_image(task + "-mask_warp_overlay", mask_overlap, n_iter)
 
     def tb_scalar_dict(self, losses, task="training"):
@@ -731,7 +666,6 @@ class Train_model_frontend(object):
             self.writer.add_histogram(
                 task + "-" + element, tb_dict[element], self.n_iter
             )
-        pass
 
     def printLosses(self, losses, task="training"):
         """
@@ -754,9 +688,6 @@ class Train_model_frontend(object):
         :param batch_size:
         :return:
         """
-        from utils.utils import getPtsFromHeatmap
-        from utils.utils import box_nms
-
         boxNms = False
         n_iter = self.n_iter
 
@@ -783,8 +714,8 @@ class Train_model_frontend(object):
 
             if idx < 5:
                 result_overlap = img_overlap(
-                    np.expand_dims(label_sample_nms_sample, 0),
-                    np.expand_dims(semi_thd_nms_sample, 0),
+                    label_sample_nms_sample,  # np.expand_dims(label_sample_nms_sample, 0),
+                    semi_thd_nms_sample,  # np.expand_dims(semi_thd_nms_sample, 0),
                     toNumpy(img[idx, :, :, :]),
                 )
                 self.writer.add_image(
@@ -806,8 +737,8 @@ class Train_model_frontend(object):
 
                 if idx < 5:
                     result_overlap = img_overlap(
-                        np.expand_dims(label_sample_nms_sample, 0),
-                        semi_flat_tensor_nms.numpy()[np.newaxis, :, :],
+                        label_sample_nms_sample,  # np.expand_dims(label_sample_nms_sample, 0),
+                        semi_flat_tensor_nms.numpy(),  # semi_flat_tensor_nms.numpy()[np.newaxis, :, :],
                         toNumpy(img[idx, :, :, :]),
                     )
                     self.writer.add_image(
@@ -855,13 +786,8 @@ class Train_model_frontend(object):
                 % (task, n_iter, precision, recall)
             )
 
-    ######## static methods ########
     @staticmethod
     def input_to_imgDict(sample, tb_images_dict):
-        # for e in list(sample):
-        #     print("sample[e]", sample[e].shape)
-        #     if (sample[e]).dim() == 4:
-        #         tb_images_dict[e] = sample[e]
         for e in list(sample):
             element = sample[e]
             if type(element) is torch.Tensor:
@@ -894,9 +820,7 @@ if __name__ == "__main__":
 
     torch.set_default_tensor_type(torch.FloatTensor)
     with open(filename, "r") as f:
-        config = yaml.load(f)
-
-    from utils.loader import dataLoader as dataLoader
+        config = yaml.safe_load(f)
 
     # data = dataLoader(config, dataset='hpatches')
     task = config["data"]["dataset"]
@@ -917,10 +841,7 @@ if __name__ == "__main__":
     train_agent.dataParallel()
     train_agent.train()
 
-    # epoch += 1
-    try:
-        model_fe.train()
-    # catch exception
-    except KeyboardInterrupt:
-        logging.info("ctrl + c is pressed. save model")
-    # is_best = True
+    # try:
+    #     model_fe.train()
+    # except KeyboardInterrupt:
+    #     logging.info("ctrl + c is pressed. save model")
