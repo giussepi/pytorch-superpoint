@@ -39,7 +39,7 @@ class Train_model_frontend(object):
         ## default dimension:
             heatmap: torch (batch_size, H, W, 1)
             dense_desc: torch (batch_size, H, W, 256)
-v            pts: [batch_size, np (N, 3)]
+            pts: [batch_size, np (N, 3)]
             desc: [batch_size, np(256, N)]
 
         :param config:
