@@ -59,7 +59,6 @@ class Train_model_frontend(object):
         self.device = device
         self.save_path = save_path
         self._train = True
-        self._eval = True
         self.cell_size = 8
         self.subpixel = False
         self.loss = 0
@@ -235,7 +234,7 @@ class Train_model_frontend(object):
                 self.n_iter += 1
                 running_losses.append(loss_out)
                 # run validation
-                if self._eval and self.n_iter % self.config["validation_interval"] == 0:
+                if self.n_iter % self.config["validation_interval"] == 0:
                     logging.info("====== Validating...")
                     for j, sample_val in enumerate(self.val_loader):
                         self.train_val_sample(sample_val, self.n_iter + j, False)

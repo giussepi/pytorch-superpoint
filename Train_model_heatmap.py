@@ -57,7 +57,6 @@ class Train_model_heatmap(Train_model_frontend):
         self.device = device
         self.save_path = save_path
         self._train = True
-        self._eval = True
         self.cell_size = 8
         self.subpixel = False
 
