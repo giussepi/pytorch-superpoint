@@ -1,52 +1,37 @@
-"""script for subpixel experiment (not tested)
+# -*- coding: utf-8 -*-
+"""Train_model_subpixel.py
+script for subpixel experiment (not tested)
 """
 
-
-import numpy as np
-import torch
-from torch.autograd import Variable
-import torch.backends.cudnn as cudnn
-import torch.optim
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.utils.data
-from tqdm import tqdm
-from utils.loader import dataLoader, modelLoader, pretrainedLoader
 import logging
+from pathlib import Path
 
+import torch
+
+from Train_model_frontend import Train_model_frontend
+from utils.loader import dataLoader, modelLoader, pretrainedLoader
 from utils.tools import dict_update
 
-from utils.utils import labels2Dto3D, flattenDetection, labels2Dto3D_flattened
 
-from utils.utils import pltImshow, saveImg
-from utils.utils import precisionRecall_torch
-from utils.utils import save_checkpoint
-
-from pathlib import Path
-from Train_model_frontend import Train_model_frontend
+__all__ = [
+    'Train_model_subpixel',
+]
 
 
 class Train_model_subpixel(Train_model_frontend):
 
-    default_config = {
-        'train_iter': 170000,
-        'save_interval': 2000,
-        'tensorboard_interval': 200,
-        'model': {
-            'subpixel': {
-                'enable': False
-            }
-        }
-    }
-
     def __init__(self, config, save_path=Path('.'), device='cpu', verbose=False):
         print("using: Train_model_subpixel")
-        self.config = self.default_config
+        self.config = self.DEFAULT_CONFIG
         self.config = dict_update(self.config, config)
         self.device = device
         self.save_path = save_path
         self.cell_size = 8
-        self.max_iter = config['train_iter']
+        self.epochs = config["epochs"]
+        self.current_epoch = 0
+        self.n_iter = 0
+        self.net = None
+        self.optimizer = None
         self._train = True
 
     def print(self):
@@ -65,32 +50,28 @@ class Train_model_subpixel(Train_model_frontend):
         # betas=(0.9, 0.999))
         optimizer = self.adamOptim(net, lr=self.config['model']['learning_rate'])
 
-        n_iter = 0
         # load pretrained
         if self.config['retrain'] == True:
             logging.info("New model")
-            pass
         else:
             path = self.config['pretrained']
             mode = '' if path[:-3] == '.pth' else 'full'
             logging.info('load pretrained model from: %s', path)
-            net, optimizer, n_iter = pretrainedLoader(net, optimizer, n_iter, path, mode=mode, full_path=True)
-            logging.info('successfully load pretrained model from: %s', path)
+            net, optimizer, self.current_epoch, self.n_iter = pretrainedLoader(
+                net, optimizer, path, mode=mode, full_path=True)
 
-        def setIter(n_iter):
-            if self.config['reset_iter']:
-                logging.info("reset iterations to 0")
-                n_iter = 0
-            return n_iter
+            # WARM START CASE
+            if self.config["reset_epochs_iters"]:
+                self.current_epoch = self.n_iter = 0
+
+            logging.info('successfully load pretrained model from: %s', path)
 
         self.net = net
         self.optimizer = optimizer
-        self.n_iter = setIter(n_iter)
-        pass
 
-    def train_val_sample(self, sample, n_iter=0, train=False):
+    def train_val_sample(self, sample, tb_interval, n_iter=0, train=False):
         task = 'train' if train else 'val'
-        tb_interval = self.config['tensorboard_interval']
+        self.net.train(train)  # when train = False, it works like self.net.eval()
 
         losses, tb_imgs, tb_hist = {}, {}, {}
         # get the inputs
@@ -177,7 +158,7 @@ class Train_model_subpixel(Train_model_frontend):
 
         self.tb_scalar_dict(losses, task)
         if n_iter % tb_interval == 0 or task == 'val':
-            logging.info("current iteration: %d, tensorboard_interval: %d", n_iter, tb_interval)
+            logging.info("current iteration: %d, tensorboard_epoch_interval: %d", n_iter, tb_interval)
             self.tb_images_dict(task, tb_imgs, max_img=5)
             self.tb_hist_dict(task, tb_hist)
 

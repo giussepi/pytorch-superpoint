@@ -2,7 +2,7 @@ data:
     name: 'kitti'
     dataset: 'Kitti_inh' # 'Kitti'
     root:  './datasets/KITTI/' # /data/kitti/kitti_wVal
-    root_split_txt: 'datasets/kitti_split'   
+    root_split_txt: 'datasets/kitti_split'
     labels: logs/magicpoint_synth20_homoAdapt100_kitti_h384_labels/predictions
 
     gaussian_label:
@@ -86,15 +86,13 @@ model:
             other_settings: 'train from scratch, 2d method'
     lambda_res: 100
 
-retrain: true  # set true for new model
-reset_iter: true
-train_iter: 170000
-validation_interval: 2000
-tensorboard_interval: 400
-save_interval: 2000
+retrain: False # set true for new model
+reset_epoch_iter: True  # use it with pretrained and retrain=False to apply WARM START strategy
+epochs: 100 # 50 - 100
+validations_per_epoch: 1  # number of validations to be run per epoch
+tensorboard_epoch_interval: 1  # number of data saved to tensorboard per epoch
+savings_per_epoch: 1  # number of checkpoints created per epoch. It can be equal to tensorboard_epoch_interval
 validation_size: 5
 
 pretrained:
 # pretrained: 'logs/superpoint_coco_heat2_0/checkpoints/superPointNet_90000_checkpoint.pth.tar'
-
-

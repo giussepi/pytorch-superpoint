@@ -89,11 +89,11 @@ model:
         # loss_func: 'subpixel_loss_no_argmax' # subpixel_loss, subpixel_loss_no_argmax
 
 retrain: False # set true for new model
-reset_iter: True # set true to set the iteration number to 0
-train_iter: 200000 # 170000
-validation_interval: 200 # 2000
-tensorboard_interval: 200 # 200
-save_interval: 200 # 2000
+reset_epoch_iter: True  # use it with pretrained and retrain=False to apply WARM START strategy
+epochs: 100 # 50 - 100
+validations_per_epoch: 1  # number of validations to be run per epoch
+tensorboard_epoch_interval: 1  # number of data saved to tensorboard per epoch
+savings_per_epoch: 1  # number of checkpoints created per epoch. It can be equal to tensorboard_epoch_interval
 validation_size: 5
 
 pretrained: 'logs/superpoint_coco_heat2_0/checkpoints/superPointNet_170000_checkpoint.pth.tar'

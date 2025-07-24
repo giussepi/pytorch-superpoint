@@ -25,6 +25,11 @@ from utils.utils import (
     getPtsFromHeatmap)
 
 
+__all__ = [
+    'Train_model_heatmap',
+]
+
+
 class Train_model_heatmap(Train_model_frontend):
     """ Wrapper around pytorch net to help with pre and post image processing. """
 
@@ -36,20 +41,21 @@ class Train_model_heatmap(Train_model_frontend):
     pts: [batch_size, np (N, 3)]
     desc: [batch_size, np(256, N)]
     """
-    default_config = {
-        "train_iter": 170000,
-        "save_interval": 2000,
-        "tensorboard_interval": 200,
+    DEFAULT_CONFIG = {
+        "retrain": True,
+        "reset_epoch_iter": True,
+        "epochs": 100,
+        "validations_per_epoch": 1,
+        "tensorboard_epoch_interval": 1,
+        "savings_per_epoch": 1,
         "model": {"subpixel": {"enable": False}},
         "data": {"gaussian_label": {"enable": False}},
     }
 
     def __init__(self, config, save_path=Path("."), device="cpu", verbose=False):
-        # config
         # Update config
         print("Load Train_model_heatmap!!")
-
-        self.config = self.default_config
+        self.config = self.DEFAULT_CONFIG
         self.config = dict_update(self.config, config)
         print("check config!!", self.config)
 
@@ -59,10 +65,13 @@ class Train_model_heatmap(Train_model_frontend):
         self._train = True
         self.cell_size = 8
         self.subpixel = False
-
-        self.max_iter = config["train_iter"]
-
+        self.epochs = config["epochs"]
+        self.current_epoch = 0
+        self.n_iter = 0
+        self.net = None
+        self.optimizer = None
         self.gaussian = False
+
         if self.config["data"]["gaussian_label"]["enable"]:
             self.gaussian = True
 
@@ -121,16 +130,17 @@ class Train_model_heatmap(Train_model_frontend):
         nms_overlap = np.stack(nms_overlap, axis=0)
         images_dict.update({name + "_nms_overlap": nms_overlap})
 
-    def train_val_sample(self, sample, n_iter=0, train=False):
+    def train_val_sample(self, sample, tb_interval, n_iter=0, train=False):
         """
         # key function
         :param sample:
+        :param tb_interval:
         :param n_iter:
         :param train:
         :return:
         """
         task = "train" if train else "val"
-        tb_interval = self.config["tensorboard_interval"]
+        self.net.train(train)  # when train = False, it works like self.net.eval()
         if_warp = self.config['data']['warped_pair']['enable']
 
         self.scalar_dict, self.images_dict, self.hist_dict = {}, {}, {}
@@ -310,7 +320,7 @@ class Train_model_heatmap(Train_model_frontend):
 
         if n_iter % tb_interval == 0 or task == "val":
             logging.info(
-                "current iteration: %d, tensorboard_interval: %d", n_iter, tb_interval
+                "current iteration: %d, tensorboard_epoch_interval: %d", n_iter, tb_interval
             )
 
             # add clean map to tensorboard

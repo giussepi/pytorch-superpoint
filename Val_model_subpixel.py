@@ -10,7 +10,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.data
 from tqdm import tqdm
-from utils.loader import dataLoader, modelLoader, pretrainedLoader
+from utils.loader import dataLoader, modelLoader
 import logging
 
 from utils.tools import dict_update
@@ -19,9 +19,9 @@ from utils.utils import labels2Dto3D, flattenDetection, labels2Dto3D_flattened
 
 from utils.utils import pltImshow, saveImg
 from utils.utils import precisionRecall_torch
-from utils.utils import save_checkpoint
 
 from pathlib import Path
+
 
 @torch.no_grad()
 class Val_model_subpixel(object):
@@ -30,9 +30,8 @@ class Val_model_subpixel(object):
         self.model = self.config['name']
         self.params = self.config['params']
         self.weights_path = self.config['pretrained']
-        self.device=device
+        self.device = device
         pass
-
 
     def loadModel(self):
         # model = 'SuperPointNet'
@@ -50,14 +49,14 @@ class Val_model_subpixel(object):
 
     def extract_patches(self, label_idx, img):
         """
-        input: 
+        input:
             label_idx: tensor [N, 4]: (batch, 0, y, x)
             img: tensor [batch, channel(1), H, W]
         """
         from utils.losses import extract_patches
         patch_size = self.config['params']['patch_size']
-        patches = extract_patches(label_idx.to(self.device), img.to(self.device), 
-            patch_size=patch_size)
+        patches = extract_patches(label_idx.to(self.device), img.to(self.device),
+                                  patch_size=patch_size)
         return patches
         pass
 
@@ -90,15 +89,16 @@ if __name__ == '__main__':
 
     # take one sample
     for i, sample in tqdm(enumerate(test_loader)):
-        if i>1: break
-
+        if i > 1:
+            break
 
         val_agent = Val_model_subpixel(config['subpixel'], device=device)
         val_agent.loadModel()
         # points from heatmap
         img = sample['image']
         print("image: ", img.shape)
-        points = torch.tensor([[1,2], [3,4]])
+        points = torch.tensor([[1, 2], [3, 4]])
+
         def points_to_4d(points):
             num_of_points = points.shape[0]
             cols = torch.zeros(num_of_points, 1).float()
@@ -108,8 +108,3 @@ if __name__ == '__main__':
         # concat points to be (batch, 0, y, x)
         patches = val_agent.extract_patches(label_idx, img)
         points_res = val_agent.run(patches)
-
-
-
-
-
