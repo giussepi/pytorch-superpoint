@@ -230,7 +230,7 @@ class Train_model_frontend(object):
         :param options:
         :return:
         """
-        logging.info("Epochs: %d/%d", self.n_iter, self.epochs)
+        logging.info("Epochs: %d/%d", self.current_epoch, self.epochs)
         running_losses = []
         len_dataset = len(self.train_loader)
         validation_interval = len_dataset // self.config['validations_per_epoch']
