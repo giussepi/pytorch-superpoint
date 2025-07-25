@@ -92,8 +92,8 @@ model:
             method: '2d'
     other_settings: 'train 2d, gauss 0.5'
 
-retrain: True # set true for new model
-reset_epoch_iter: True  # use it with pretrained and retrain=False to apply WARM START strategy
+retrain: true # set true for new model
+reset_epoch_iter: true  # use it with pretrained and retrain=False to apply WARM START strategy
 epochs: 100 # 50 - 100
 validations_per_epoch: 1  # number of validations to be run per epoch
 tensorboard_epoch_interval: 1  # number of data saved to tensorboard per epoch

@@ -88,8 +88,8 @@ model:
         # settings: 'predict flow directly'
         # loss_func: 'subpixel_loss_no_argmax' # subpixel_loss, subpixel_loss_no_argmax
 
-retrain: False # set true for new model
-reset_epoch_iter: True  # use it with pretrained and retrain=False to apply WARM START strategy
+retrain: false # set true for new model
+reset_epoch_iter: true  # use it with pretrained and retrain=False to apply WARM START strategy
 epochs: 100 # 50 - 100
 validations_per_epoch: 1  # number of validations to be run per epoch
 tensorboard_epoch_interval: 1  # number of data saved to tensorboard per epoch
