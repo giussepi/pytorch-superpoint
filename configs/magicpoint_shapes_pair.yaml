@@ -71,7 +71,7 @@ model:
         loss_type: 'softmax'
 
     batch_size:  64 # 64
-    eval_batch_size: 16
+    eval_batch_size: 64 # 16
     learning_rate: 0.001
     kernel_reg: 0.
     detection_threshold: 0.001 # 1/65
@@ -95,10 +95,9 @@ model:
 retrain: true # set true for new model
 reset_epoch_iter: true  # use it with pretrained and retrain=False to apply WARM START strategy
 epochs: 100 # 50 - 100
-validations_per_epoch: 1  # number of validations to be run per epoch
-tensorboard_epoch_interval: 1  # number of data saved to tensorboard per epoch
+tensorboard_epoch_interval: 1  # number of training data saved to tensorboard per epoch
+validations_per_epoch: 1  # number of validations to be run per epoch. Each validation is saved to tensorboard. So it's recommended that validations_per_epoch == tensorboard_epoch_interval and batch_size == eval_batch_size
 savings_per_epoch: 1  # number of checkpoints created per epoch. It can be equal to tensorboard_epoch_interval
-validation_size: 10
 # train_show_interval: 1000 # one show of the current training from to Tensorboard every N training steps
 # seed: 0
 

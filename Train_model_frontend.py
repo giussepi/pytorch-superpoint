@@ -232,10 +232,12 @@ class Train_model_frontend(object):
         """
         logging.info("Epochs: %d/%d", self.current_epoch, self.epochs)
         running_losses = []
-        len_dataset = len(self.train_loader)
-        validation_interval = len_dataset // self.config['validations_per_epoch']
-        saving_interval = len_dataset // self.config['savings_per_epoch']
-        tensorboard_interval = len_dataset // self.config['tensorboard_epoch_interval']
+        running_data = {'train': {}, 'val': {}}
+        len_train_dataset = len(self.train_loader)
+        len_val_dataset = len(self.val_loader)
+        validation_interval = len_train_dataset // self.config['validations_per_epoch']
+        tensorboard_interval = len_train_dataset // self.config['tensorboard_epoch_interval']
+        saving_interval = len_train_dataset // self.config['savings_per_epoch']
 
         for epoch in pbiter(range(self.current_epoch+1, self.epochs+1)):
             self.current_epoch = epoch
@@ -243,19 +245,24 @@ class Train_model_frontend(object):
             for sample_train in pbiter(self.train_loader):
                 self.n_iter += 1
                 # train one sample
-                loss_out = self.train_val_sample(sample_train, tensorboard_interval, self.n_iter, True)
+                loss_out = self.train_val_sample(sample_train, tensorboard_interval, running_data, self.n_iter, True)
                 running_losses.append(loss_out)
                 # run validation
                 if self.n_iter % validation_interval == 0:
                     logging.info("====== Validating...")
-                    # TODO: review these lines. The validation should always cover the whole validation data
-                    for j, sample_val in enumerate(self.val_loader):
-                        self.train_val_sample(sample_val, self.n_iter + j, False)
-                        if j+1 >= self.config.get("validation_size", 3):
-                            break
+                    for j, sample_val in enumerate(self.val_loader, start=1):
+                        self.train_val_sample(
+                            sample_val,
+                            len_val_dataset,
+                            running_data,
+                            self.n_iter - len_val_dataset + j,
+                            False
+                        )
                 # save model
                 if self.n_iter % saving_interval == 0:
                     self.saveModel()
+
+            self.writer.flush()
 
         logging.info("End training: %d", self.n_iter)
 
@@ -324,11 +331,14 @@ class Train_model_frontend(object):
 
         return points_res
 
-    def train_val_sample(self, sample, tb_interval, n_iter=0, train=False):
+    # TODO: need to be updated following Train_model_heatmap.py -> train_val_sample
+    #       MAYBE NOT BECAUSE IT'S NOT BEING USED
+    def train_val_sample(self, sample, tb_interval, running_data=None, n_iter=0, train=False):
         """
         # deprecated: default train_val_sample
         :param sample:
         :param tb_interval:
+        :param running_data:
         :param n_iter:
         :param train:
         :return:
@@ -487,9 +497,6 @@ class Train_model_frontend(object):
             loss.backward()
             self.optimizer.step()
 
-        # FIXME: implementation not found
-        # self.addLosses2tensorboard(losses, task)
-        # replaced with the following line
         self.tb_scalar_dict(losses, task)
         if n_iter % tb_interval == 0 or task == "val":
             logging.info(
@@ -534,6 +541,8 @@ class Train_model_frontend(object):
                 "current_epoch": self.current_epoch,
                 "model_state_dict": model_state_dict,
                 "optimizer_state_dict": self.optimizer.state_dict(),
+                # TODO: it seems there's not point on saving the loss. So remove it and test if
+                #       everything still works
                 "loss": self.loss,
             },
             self.current_epoch, self.n_iter
@@ -641,7 +650,6 @@ class Train_model_frontend(object):
         """
         for element in list(losses):
             self.writer.add_scalar(task + "-" + element, losses[element], self.n_iter)
-            # print (task, '-', element, ": ", losses[element].item())
 
     def tb_images_dict(self, task, tb_imgs, max_img=5):
         """
@@ -679,7 +687,10 @@ class Train_model_frontend(object):
         """
         for element in list(losses):
             # print ('add to tb: ', element)
-            print(task, "-", element, ": ", losses[element].item())
+            print(
+                task, "-", element, ": ",
+                losses[element].item() if isinstance(losses[element], torch.Tensor) else losses[element]
+            )
 
     def add2tensorboard_nms(self, img, labels_2D, semi, task="training", batch_size=1):
         """

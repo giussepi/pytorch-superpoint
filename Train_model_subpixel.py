@@ -69,7 +69,9 @@ class Train_model_subpixel(Train_model_frontend):
         self.net = net
         self.optimizer = optimizer
 
-    def train_val_sample(self, sample, tb_interval, n_iter=0, train=False):
+    # TODO: need to be updated following Train_model_heatmap.py -> train_val_sample
+    #       MAYBE NOT BECAUSE IT'S NOT BEING USED
+    def train_val_sample(self, sample, tb_interval, running_data=None, n_iter=0, train=False):
         task = 'train' if train else 'val'
         self.net.train(train)  # when train = False, it works like self.net.eval()
 
