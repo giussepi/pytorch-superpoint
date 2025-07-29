@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """This is the frontend interface for training
 base class: inherited by other Train_model_*.py
 
@@ -6,31 +7,38 @@ Date: 2019/12/12
 """
 
 import logging
+import math
 from pathlib import Path
 
 import numpy as np
 import torch
 import yaml
 from torch import nn, optim
-from tqdm import tqdm
 
 from utils.loader import dataLoader, modelLoader, pretrainedLoader
 from utils.losses import extract_patches
+from utils.multiple_progress_bars import pbiter
 from utils.tools import dict_update
 from utils.utils import (labels2Dto3D, flattenDetection, labels2Dto3D_flattened,
                          saveImg, precisionRecall_torch, save_checkpoint, toNumpy, thd_img, img_overlap,
                          getPtsFromHeatmap, box_nms)
+
+__all__ = [
+    'Train_model_frontend',
+]
 
 
 class Train_model_frontend(object):
     """
     This is the base class for training classes. Wrap pytorch net to help training process.
     """
-
-    default_config = {
-        "train_iter": 170000,
-        "save_interval": 2000,
-        "tensorboard_interval": 200,
+    DEFAULT_CONFIG = {
+        "retrain": True,
+        "reset_epoch_iter": True,
+        "epochs": 100,
+        "validations_per_epoch": 1,
+        "tensorboard_epoch_interval": 1,
+        "savings_per_epoch": 1,
         "model": {"subpixel": {"enable": False}},
     }
 
@@ -51,7 +59,7 @@ class Train_model_frontend(object):
         """
         # config
         print("Load Train_model_frontend!!")
-        self.config = self.default_config
+        self.config = self.DEFAULT_CONFIG
         self.config = dict_update(self.config, config)
         print("check config!!", self.config)
 
@@ -59,12 +67,17 @@ class Train_model_frontend(object):
         self.device = device
         self.save_path = save_path
         self._train = True
-        self._eval = True
         self.cell_size = 8
         self.subpixel = False
+        self.epochs = config["epochs"]
+        self.current_epoch = 0
+        self.best_epoch = 0  # Epoch when the best accuracy is achieved
+        self.best_score = -math.inf  # Best metrics average weighted sum after an epoch
+        self.best_metrics = None  # Overall best metrics based on best_accuracy
+        self.n_iter = 0
+        self.net = None
+        self.optimizer = None
         self.loss = 0
-
-        self.max_iter = config["train_iter"]
 
         if self.config["model"]["dense_loss"]["enable"]:
             # original superpoint paper uses dense loss
@@ -152,7 +165,6 @@ class Train_model_frontend(object):
         logging.info("=> setting adam solver")
         optimizer = self.adamOptim(net, lr=self.config["model"]["learning_rate"])
 
-        n_iter = 0
         # new model or load pretrained
         if self.config["retrain"] == True:
             logging.info("New model")
@@ -160,20 +172,24 @@ class Train_model_frontend(object):
             path = self.config["pretrained"]
             mode = "" if path[-4:] == ".pth" else "full"  # the suffix is '.pth' or 'tar.gz'
             logging.info("load pretrained model from: %s", path)
-            net, optimizer, n_iter = pretrainedLoader(
-                net, optimizer, n_iter, path, mode=mode, full_path=True
-            )
+            net, optimizer, self.current_epoch,  self.n_iter, self.best_epoch, self.best_score, \
+                self.best_metrics = pretrainedLoader(net, optimizer, path, mode=mode, full_path=True)
+
+            # LOADING A LEGACY PRETRAINED MODEL CASE
+            if self.n_iter != 0 and self.current_epoch == 0:
+                logging.warn('Loading a legacy checkpoint. Make sure to set reset_epoch_iter to True '
+                             'in the YAML file, so warm start is applied appropriately')
+
+            # WARM START CASE
+            if self.config["reset_epoch_iter"]:
+                self.current_epoch = self.n_iter = self.best_epoch = 0
+                self.best_score = -math.inf
+                self.best_metrics = None
+
             logging.info("successfully load pretrained model from: %s", path)
 
         self.net = net
         self.optimizer = optimizer
-        self.n_iter = self.setIter(n_iter)
-
-    def setIter(self, n_iter):
-        if self.config["reset_iter"]:
-            logging.info("reset iterations to 0")
-            n_iter = 0
-        return n_iter
 
     @property
     def writer(self):
@@ -194,7 +210,7 @@ class Train_model_frontend(object):
         loader for dataset, set from outside
         :return:
         """
-        print("get dataloader")
+        print("get train dataloader")
         return self._train_loader
 
     @train_loader.setter
@@ -204,12 +220,12 @@ class Train_model_frontend(object):
 
     @property
     def val_loader(self):
-        print("get dataloader")
+        print("get val dataloader")
         return self._val_loader
 
     @val_loader.setter
     def val_loader(self, loader):
-        print("set train loader")
+        print("set val loader")
         self._val_loader = loader
 
     def train(self, **options):
@@ -220,40 +236,43 @@ class Train_model_frontend(object):
         :param options:
         :return:
         """
-        # training info
-        logging.info("n_iter: %d", self.n_iter)
-        logging.info("max_iter: %d", self.max_iter)
+        logging.info("Epochs: %d/%d", self.current_epoch, self.epochs)
         running_losses = []
-        epoch = 0
-        # Train one epoch
-        while self.n_iter < self.max_iter:
-            print("epoch: ", epoch)
-            epoch += 1
-            for _, sample_train in tqdm(enumerate(self.train_loader)):
-                # train one sample
-                loss_out = self.train_val_sample(sample_train, self.n_iter, True)
+        running_data = {'train': {}, 'val': {}}
+        len_train_dataset = len(self.train_loader)
+        len_val_dataset = len(self.val_loader)
+        validation_interval = len_train_dataset // self.config['validations_per_epoch']
+        tensorboard_interval = len_train_dataset // self.config['tensorboard_epoch_interval']
+        saving_interval = len_train_dataset // self.config['savings_per_epoch']
+
+        for epoch in pbiter(range(self.current_epoch+1, self.epochs+1)):
+            self.current_epoch = epoch
+            # print("epoch: ", self.current_epoch)
+            for sample_train in pbiter(self.train_loader):
                 self.n_iter += 1
+                # train one sample
+                loss_out = self.train_val_sample(sample_train, tensorboard_interval, running_data, self.n_iter, True)
                 running_losses.append(loss_out)
                 # run validation
-                if self._eval and self.n_iter % self.config["validation_interval"] == 0:
+                if self.n_iter % validation_interval == 0:
                     logging.info("====== Validating...")
-                    for j, sample_val in enumerate(self.val_loader):
-                        self.train_val_sample(sample_val, self.n_iter + j, False)
-                        if j > self.config.get("validation_size", 3):
-                            break
+                    for j, sample_val in enumerate(self.val_loader, start=1):
+                        self.train_val_sample(
+                            sample_val,
+                            len_val_dataset,
+                            running_data,
+                            self.n_iter - len_val_dataset + j,
+                            False
+                        )
                 # save model
-                if self.n_iter % self.config["save_interval"] == 0:
-                    logging.info(
-                        "save model: every %d interval, current iteration: %d",
-                        self.config["save_interval"],
-                        self.n_iter,
-                    )
+                if saving_interval > 0 and (self.n_iter % saving_interval == 0):
                     self.saveModel()
-                # ending condition
-                if self.n_iter > self.max_iter:
-                    # end training
-                    logging.info("End training: %d", self.n_iter)
-                    break
+
+            self.writer.flush()
+
+        self.save_last_model()
+
+        logging.info("End training: %d", self.n_iter)
 
     def getLabels(self, labels_2D, cell_size, device="cpu"):
         """
@@ -320,16 +339,20 @@ class Train_model_frontend(object):
 
         return points_res
 
-    def train_val_sample(self, sample, n_iter=0, train=False):
+    # TODO: need to be updated following Train_model_heatmap.py -> train_val_sample
+    #       MAYBE NOT BECAUSE IT'S NOT BEING USED
+    def train_val_sample(self, sample, tb_interval, running_data=None, n_iter=0, train=False):
         """
         # deprecated: default train_val_sample
         :param sample:
+        :param tb_interval:
+        :param running_data:
         :param n_iter:
         :param train:
         :return:
         """
         task = "train" if train else "val"
-        tb_interval = self.config["tensorboard_interval"]
+        self.net.train(train)  # when train = False, it works like self.net.eval()
 
         losses = {}
         # get the inputs
@@ -482,13 +505,10 @@ class Train_model_frontend(object):
             loss.backward()
             self.optimizer.step()
 
-        # FIXME: implementation not found
-        # self.addLosses2tensorboard(losses, task)
-        # replaced with the following line
         self.tb_scalar_dict(losses, task)
         if n_iter % tb_interval == 0 or task == "val":
             logging.info(
-                "current iteration: %d, tensorboard_interval: %d", n_iter, tb_interval
+                "current iteration: %d, tensorboard_epoch_interval: %d", n_iter, tb_interval
             )
             self.addImg2tensorboard(
                 img,
@@ -510,31 +530,46 @@ class Train_model_frontend(object):
                 )
 
             self.printLosses(losses, task)
-
-            # if n_iter % tb_interval == 0 or task == 'val':
-            # print ("add nms")
             self.add2tensorboard_nms(
                 img, labels_2D, semi, task=task, batch_size=batch_size
             )
 
         return loss.item()
 
-    def saveModel(self):
+    def saveModel(self, filename='checkpoint.pth.tar'):
         """
-        # save checkpoint for resuming training
-        :return:
+        save checkpoint for resuming training
+        :param filename:
         """
         model_state_dict = self.net.module.state_dict()
         save_checkpoint(
             self.save_path,
             {
-                "n_iter": self.n_iter + 1,
+                "n_iter": self.n_iter,
+                "current_epoch": self.current_epoch,
                 "model_state_dict": model_state_dict,
                 "optimizer_state_dict": self.optimizer.state_dict(),
+                "best_epoch": self.best_epoch,
+                "best_score": self.best_score,
+                "best_metrics": self.best_metrics,
+                # TODO: it seems there's not point on saving the loss. So remove it and test if
+                #       everything still works
                 "loss": self.loss,
             },
-            self.n_iter,
+            self.current_epoch, self.n_iter, filename
         )
+
+    def save_best_model(self):
+        """ saves the checkpoint using 'best_model.pth.tar' as filename """
+        # removing previous best model checkpoints
+        for _ in self.save_path.glob('*_best_model.pth.tar'):
+            _.unlink()
+        # saving current best model
+        self.saveModel('best_model.pth.tar')
+
+    def save_last_model(self):
+        """ saves the checkpoint using 'last_model.pth.tar' as filename """
+        self.saveModel('last_model.pth.tar')
 
     def add_single_image_to_tb(self, task, img_tensor, n_iter, name="img"):
         """
@@ -638,7 +673,6 @@ class Train_model_frontend(object):
         """
         for element in list(losses):
             self.writer.add_scalar(task + "-" + element, losses[element], self.n_iter)
-            # print (task, '-', element, ": ", losses[element].item())
 
     def tb_images_dict(self, task, tb_imgs, max_img=5):
         """
@@ -676,7 +710,10 @@ class Train_model_frontend(object):
         """
         for element in list(losses):
             # print ('add to tb: ', element)
-            print(task, "-", element, ": ", losses[element].item())
+            print(
+                task, "-", element, ": ",
+                losses[element].item() if isinstance(losses[element], torch.Tensor) else losses[element]
+            )
 
     def add2tensorboard_nms(self, img, labels_2D, semi, task="training", batch_size=1):
         """

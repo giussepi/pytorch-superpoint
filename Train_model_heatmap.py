@@ -6,23 +6,31 @@ Date: 2019/12/12
 """
 
 import logging
+from copy import deepcopy
 from pathlib import Path
 
+import math
 import numpy as np
 import torch
 import torch.optim
 import torch.utils.data
 import yaml
-from torch import nn
+from torch import nn, Tensor
 
 from Train_model_frontend import Train_model_frontend
 from utils.d2s import DepthToSpace
+from utils.dict_ops import dict_sum, dict_div_by_scalar, dict_only_primitives
 from utils.loader import dataLoader
 from utils.losses import do_log, extract_patches, soft_argmax_2d, norm_patches
 from utils.tools import dict_update
 from utils.utils import (
-    precisionRecall_torch, flattenDetection, toNumpy, img_overlap, to_floatTensor, labels2Dto3D,
-    getPtsFromHeatmap)
+    flattenDetection, toNumpy, img_overlap, to_floatTensor, labels2Dto3D,
+    getPtsFromHeatmap, precision, recall, f1_score, accuracy, balanced_accuracy)
+
+
+__all__ = [
+    'Train_model_heatmap',
+]
 
 
 class Train_model_heatmap(Train_model_frontend):
@@ -36,20 +44,21 @@ class Train_model_heatmap(Train_model_frontend):
     pts: [batch_size, np (N, 3)]
     desc: [batch_size, np(256, N)]
     """
-    default_config = {
-        "train_iter": 170000,
-        "save_interval": 2000,
-        "tensorboard_interval": 200,
+    DEFAULT_CONFIG = {
+        "retrain": True,
+        "reset_epoch_iter": True,
+        "epochs": 100,
+        "validations_per_epoch": 1,
+        "tensorboard_epoch_interval": 1,
+        "savings_per_epoch": 1,
         "model": {"subpixel": {"enable": False}},
         "data": {"gaussian_label": {"enable": False}},
     }
 
     def __init__(self, config, save_path=Path("."), device="cpu", verbose=False):
-        # config
         # Update config
         print("Load Train_model_heatmap!!")
-
-        self.config = self.default_config
+        self.config = self.DEFAULT_CONFIG
         self.config = dict_update(self.config, config)
         print("check config!!", self.config)
 
@@ -57,13 +66,23 @@ class Train_model_heatmap(Train_model_frontend):
         self.device = device
         self.save_path = save_path
         self._train = True
-        self._eval = True
         self.cell_size = 8
         self.subpixel = False
-
-        self.max_iter = config["train_iter"]
-
+        self.epochs = config["epochs"]
+        self.current_epoch = 0
+        self.best_epoch = 0  # Epoch when the best score is achieved
+        self.best_score = -math.inf  # Best metrics average weighted sum after an epoch
+        self.best_metrics = None  # Overall best metrics based on best_score
+        # NOTE: all metrics must have the same signature
+        self.metrics_fn = [precision, recall, f1_score, accuracy, balanced_accuracy]
+        # used to compute the score to determine the best model
+        self.metrics_weights = [0, 1, 0, 0, 0]
+        self.metrics_keys = [_.__name__ for _ in self.metrics_fn]
+        self.n_iter = 0
+        self.net = None
+        self.optimizer = None
         self.gaussian = False
+
         if self.config["data"]["gaussian_label"]["enable"]:
             self.gaussian = True
 
@@ -122,19 +141,38 @@ class Train_model_heatmap(Train_model_frontend):
         nms_overlap = np.stack(nms_overlap, axis=0)
         images_dict.update({name + "_nms_overlap": nms_overlap})
 
-    def train_val_sample(self, sample, n_iter=0, train=False):
+    def compute_score(self, data: dict) -> float:
+        """
+        Computes the overall score considering the metrics weights
+
+        Kwargs:
+            data <dict>: dictionary containing averaged scores
+
+        Returns:
+            score <float>
+        """
+        assert isinstance(data, dict), type(data)
+
+        score = sum(data[k]*w for k, w in zip(self.metrics_keys, self.metrics_weights))
+        score /= sum(self.metrics_weights)
+
+        return score
+
+    def train_val_sample(self, sample, tb_interval, running_data, n_iter=0, train=False):
         """
         # key function
         :param sample:
+        :param tb_interval:
+        :param running_data:
         :param n_iter:
         :param train:
         :return:
         """
         task = "train" if train else "val"
-        tb_interval = self.config["tensorboard_interval"]
+        self.net.train(train)  # when train = False, it works like self.net.eval()
         if_warp = self.config['data']['warped_pair']['enable']
 
-        self.scalar_dict, self.images_dict, self.hist_dict = {}, {}, {}
+        scalar_dict, images_dict, hist_dict = {}, {}, {}
         # get the inputs
         img, labels_2D, mask_2D = (
             sample["image"],
@@ -256,12 +294,12 @@ class Train_model_heatmap(Train_model_frontend):
         #     print("add_res_loss!!!")
         #     heatmap_org = self.get_heatmap(semi, det_loss_type)  # tensor []
         #     heatmap_org_nms_batch = self.heatmap_to_nms(
-        #         self.images_dict, heatmap_org, name="heatmap_org"
+        #         images_dict, heatmap_org, name="heatmap_org"
         #     )
         #     if if_warp:
         #         heatmap_warp = self.get_heatmap(semi_warp, det_loss_type)
         #         heatmap_warp_nms_batch = self.heatmap_to_nms(
-        #             self.images_dict, heatmap_warp, name="heatmap_warp"
+        #             images_dict, heatmap_warp, name="heatmap_warp"
         #         )
 
         #     # original: pred
@@ -271,6 +309,9 @@ class Train_model_heatmap(Train_model_frontend):
         #         * to_floatTensor(heatmap_org_nms_batch).unsqueeze(1),
         #         heatmap_org,
         #         sample["labels_res"],
+        #         scalar_dict,
+        #         images_dict,
+        #         hist_dict,
         #         name="original_pred",
         #     )
         #     loss_res_ori = (outs_res["loss"] ** 2).mean()
@@ -281,6 +322,9 @@ class Train_model_heatmap(Train_model_frontend):
         #             * to_floatTensor(heatmap_warp_nms_batch).unsqueeze(1),
         #             heatmap_warp,
         #             sample["warped_res"],
+        #             scalar_dict,
+        #             images_dict,
+        #             hist_dict,
         #             name="warped_pred",
         #         )
         #         loss_res_warp = (outs_res_warp["loss"] ** 2).mean()
@@ -289,12 +333,12 @@ class Train_model_heatmap(Train_model_frontend):
         #     loss_res = loss_res_ori + loss_res_warp
         #     # print("loss_res requires_grad: ", loss_res.requires_grad)
         #     loss += loss_res
-        #     self.scalar_dict.update(
+        #     scalar_dict.update(
         #         {"loss_res_ori": loss_res_ori, "loss_res_warp": loss_res_warp}
         #     )
 
         self.loss = loss
-        self.scalar_dict.update(
+        scalar_dict.update(
             {
                 "loss": loss,
                 "loss_det": loss_det,
@@ -303,90 +347,105 @@ class Train_model_heatmap(Train_model_frontend):
                 "negative_dist": negative_dist,
             }
         )
-        self.input_to_imgDict(sample, self.images_dict)
+        self.input_to_imgDict(sample, images_dict)
 
         if train:
             loss.backward()
             self.optimizer.step()
 
-        if n_iter % tb_interval == 0 or task == "val":
-            logging.info(
-                "current iteration: %d, tensorboard_interval: %d", n_iter, tb_interval
+        # add clean map to tensorboard
+        # semi_warp: flatten, to_numpy
+        heatmap_org = self.get_heatmap(semi, det_loss_type)  # tensor []
+        heatmap_org_nms_batch = self.heatmap_to_nms(
+            images_dict, heatmap_org, name="heatmap_org"
+        )
+        if if_warp:
+            heatmap_warp = self.get_heatmap(semi_warp, det_loss_type)
+            heatmap_warp_nms_batch = self.heatmap_to_nms(
+                images_dict, heatmap_warp, name="heatmap_warp"
             )
 
-            # add clean map to tensorboard
-            # semi_warp: flatten, to_numpy
+        self.update_overlap(
+            images_dict,
+            labels_2D,
+            heatmap_org_nms_batch[np.newaxis, ...],
+            img,
+            "original",
+        )
 
-            heatmap_org = self.get_heatmap(semi, det_loss_type)  # tensor []
-            heatmap_org_nms_batch = self.heatmap_to_nms(
-                self.images_dict, heatmap_org, name="heatmap_org"
-            )
-            if if_warp:
-                heatmap_warp = self.get_heatmap(semi_warp, det_loss_type)
-                heatmap_warp_nms_batch = self.heatmap_to_nms(
-                    self.images_dict, heatmap_warp, name="heatmap_warp"
-                )
-
+        self.update_overlap(
+            images_dict,
+            labels_2D,
+            toNumpy(heatmap_org),
+            img,
+            "original_heatmap",
+        )
+        if if_warp:
             self.update_overlap(
-                self.images_dict,
-                labels_2D,
-                heatmap_org_nms_batch[np.newaxis, ...],
-                img,
-                "original",
+                images_dict,
+                labels_warp_2D,
+                heatmap_warp_nms_batch[np.newaxis, ...],
+                img_warp,
+                "warped",
             )
-
             self.update_overlap(
-                self.images_dict,
-                labels_2D,
-                toNumpy(heatmap_org),
-                img,
-                "original_heatmap",
+                images_dict,
+                labels_warp_2D,
+                toNumpy(heatmap_warp),
+                img_warp,
+                "warped_heatmap",
             )
-            if if_warp:
-                self.update_overlap(
-                    self.images_dict,
-                    labels_warp_2D,
-                    heatmap_warp_nms_batch[np.newaxis, ...],
-                    img_warp,
-                    "warped",
-                )
-                self.update_overlap(
-                    self.images_dict,
-                    labels_warp_2D,
-                    toNumpy(heatmap_warp),
-                    img_warp,
-                    "warped_heatmap",
-                )
-            # residuals
-            if self.gaussian:
-                # original: gt
-                self.get_residual_loss(
-                    sample["labels_2D"],
-                    sample["labels_2D_gaussian"],
-                    sample["labels_res"],
-                    name="original_gt",
-                )
-                if if_warp:
-                    # warped: gt
-                    self.get_residual_loss(
-                        sample["warped_labels"],
-                        sample["warped_labels_gaussian"],
-                        sample["warped_res"],
-                        name="warped_gt",
-                    )
-
-            pr_mean = self.batch_precision_recall(
-                to_floatTensor(heatmap_org_nms_batch[:, np.newaxis, ...]),
+        # residuals
+        if self.gaussian:
+            # original: gt
+            self.get_residual_loss(
                 sample["labels_2D"],
+                sample["labels_2D_gaussian"],
+                sample["labels_res"],
+                scalar_dict,
+                images_dict,
+                hist_dict,
+                name="original_gt",
             )
-            print("pr_mean")
-            self.scalar_dict.update(pr_mean)
+            if if_warp:
+                # warped: gt
+                self.get_residual_loss(
+                    sample["warped_labels"],
+                    sample["warped_labels_gaussian"],
+                    sample["warped_res"],
+                    scalar_dict,
+                    images_dict,
+                    hist_dict,
+                    name="warped_gt",
+                )
 
-            self.printLosses(self.scalar_dict, task)
-            self.tb_images_dict(task, self.images_dict, max_img=2)
-            self.tb_hist_dict(task, self.hist_dict)
+        metrics = self.compute_metrics(
+            to_floatTensor(heatmap_org_nms_batch[:, np.newaxis, ...]),
+            sample["labels_2D"],
+        )
+        scalar_dict.update(metrics)
+        running_data[task] = dict_sum(running_data[task], dict_only_primitives(scalar_dict))
 
-        self.tb_scalar_dict(self.scalar_dict, task)
+        if (task == "train" and (n_iter % tb_interval == 0)) or (task == "val" and (n_iter == self.n_iter)):
+            logging.info("%s current iteration: %d", task, n_iter)
+            running_data[task] = dict_div_by_scalar(running_data[task], tb_interval)  # data per batch
+            running_data[task]['overall_score'] = self.compute_score(running_data[task])
+
+            if task == 'val' and running_data[task]['overall_score'] > self.best_score:
+                self.best_score = running_data[task]['overall_score']
+                self.best_metrics = deepcopy(running_data[task])
+                self.best_epoch = self.current_epoch
+                logging.info(
+                    "Best overall score of %.4f achieved at epoch %d iteration %d",
+                    self.best_score, self.best_epoch, self.n_iter
+                )
+                self.save_best_model()
+
+            self.printLosses(running_data[task], task)
+            # self.tb_images_dict(task, images_dict, max_img=2)
+            # self.tb_hist_dict(task, hist_dict)
+            self.tb_scalar_dict(running_data[task], task)
+            running_data[task].clear()
 
         return loss.item()
 
@@ -403,40 +462,43 @@ class Train_model_heatmap(Train_model_frontend):
         images_dict.update({name + "_nms_batch": heatmap_nms_batch[:, np.newaxis, ...]})
         return heatmap_nms_batch
 
-    def get_residual_loss(self, labels_2D, heatmap, labels_res, name=""):
+    def get_residual_loss(
+            self, labels_2D, heatmap, labels_res, scalar_dict, images_dict, hist_dict, name=""):
         if abs(labels_2D).sum() == 0:
             return
         outs_res = self.pred_soft_argmax(
             labels_2D, heatmap, labels_res, patch_size=5, device=self.device
         )
-        self.hist_dict[name + "_resi_loss_x"] = outs_res["loss"][:, 0]
-        self.hist_dict[name + "_resi_loss_y"] = outs_res["loss"][:, 1]
+        hist_dict[name + "_resi_loss_x"] = outs_res["loss"][:, 0]
+        hist_dict[name + "_resi_loss_y"] = outs_res["loss"][:, 1]
         err = abs(outs_res["loss"]).mean(dim=0)
         # print("err[0]: ", err[0])
         var = abs(outs_res["loss"]).std(dim=0)
-        self.scalar_dict[name + "_resi_loss_x"] = err[0]
-        self.scalar_dict[name + "_resi_loss_y"] = err[1]
-        self.scalar_dict[name + "_resi_var_x"] = var[0]
-        self.scalar_dict[name + "_resi_var_y"] = var[1]
-        self.images_dict[name + "_patches"] = outs_res["patches"]
+        scalar_dict[name + "_resi_loss_x"] = err[0]
+        scalar_dict[name + "_resi_loss_y"] = err[1]
+        scalar_dict[name + "_resi_var_x"] = var[0]
+        scalar_dict[name + "_resi_var_y"] = var[1]
+        images_dict[name + "_patches"] = outs_res["patches"]
+
         return outs_res
 
-    @staticmethod
-    def batch_precision_recall(batch_pred, batch_labels):
-        precision_recall_list = []
-        for i in range(batch_labels.shape[0]):
-            precision_recall = precisionRecall_torch(batch_pred[i], batch_labels[i])
-            precision_recall_list.append(precision_recall)
-        precision = np.mean(
-            [
-                precision_recall["precision"]
-                for precision_recall in precision_recall_list
-            ]
-        )
-        recall = np.mean(
-            [precision_recall["recall"] for precision_recall in precision_recall_list]
-        )
-        return {"precision": precision, "recall": recall}
+    def compute_metrics(self, preds: Tensor, labels: Tensor) -> dict[float]:
+        """
+        Computes and returns the metrics defined in __init__ -> self.metrics_fn
+
+        Kwargs:
+            pred   <Tensor>: binary tensor [B, C, H, W]
+            labels <Tensor>: binary tensor [B, C, H, W]
+
+        Returns:
+            metrics <dict>
+        """
+        metrics = {}
+
+        for metric_fn in self.metrics_fn:
+            metrics.update(metric_fn(preds, labels))
+
+        return metrics
 
     @staticmethod
     def ext_from_points(labels_res, points):

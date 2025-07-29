@@ -16,9 +16,9 @@ from tqdm import tqdm
 
 from tensorboardX import SummaryWriter
 
-from utils.utils import tensor2array, save_checkpoint, load_checkpoint, save_path_formatter
+from utils.utils import tensor2array, load_checkpoint, save_path_formatter
 from settings import EXPER_PATH
-from utils.loader import dataLoader, modelLoader, pretrainedLoader
+from utils.loader import dataLoader, modelLoader
 from utils.utils import getWriterPath
 
 # from utils.logging import *

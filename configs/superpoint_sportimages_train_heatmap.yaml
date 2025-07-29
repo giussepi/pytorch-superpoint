@@ -88,12 +88,11 @@ model:
         # settings: 'predict flow directly'
         # loss_func: 'subpixel_loss_no_argmax' # subpixel_loss, subpixel_loss_no_argmax
 
-retrain: False # set true for new model
-reset_iter: True # set true to set the iteration number to 0
-train_iter: 200000 # 170000
-validation_interval: 200 # 2000
-tensorboard_interval: 200 # 200
-save_interval: 200 # 2000
-validation_size: 5
+retrain: false # set true for new model
+reset_epoch_iter: true  # use it with pretrained and retrain=False to apply WARM START strategy
+epochs: 100 # 50 - 100
+tensorboard_epoch_interval: 1  # number of training data saved to tensorboard per epoch
+validations_per_epoch: 1  # number of validations to be run per epoch. Each validation is saved to tensorboard. So it's recommended that validations_per_epoch == tensorboard_epoch_interval and batch_size == eval_batch_size
+savings_per_epoch: -1  # number of checkpoints created per epoch. It can be equal to tensorboard_epoch_interval. Set it to -1 to disable it.
 
 pretrained: 'logs/superpoint_coco_heat2_0/checkpoints/superPointNet_170000_checkpoint.pth.tar'

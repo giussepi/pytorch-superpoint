@@ -36,8 +36,6 @@ def train_base(config, output_dir, args):
 
 
 def train_joint(config, output_dir, args):
-    assert 'train_iter' in config
-
     # config
     torch.set_default_tensor_type(torch.FloatTensor)
     task = config['data']['dataset']
