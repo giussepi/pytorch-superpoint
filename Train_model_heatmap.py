@@ -13,7 +13,7 @@ import torch
 import torch.optim
 import torch.utils.data
 import yaml
-from torch import nn
+from torch import nn, Tensor
 
 from Train_model_frontend import Train_model_frontend
 from utils.d2s import DepthToSpace
@@ -23,7 +23,7 @@ from utils.losses import do_log, extract_patches, soft_argmax_2d, norm_patches
 from utils.tools import dict_update
 from utils.utils import (
     precisionRecall_torch, flattenDetection, toNumpy, img_overlap, to_floatTensor, labels2Dto3D,
-    getPtsFromHeatmap)
+    getPtsFromHeatmap, f1_score, accuracy, balanced_accuracy)
 
 
 __all__ = [
@@ -91,6 +91,9 @@ class Train_model_heatmap(Train_model_frontend):
             self.desc_loss_type = "sparse"
 
         self.printImportantConfig()
+
+        # NOTE: all metrics must have the signature
+        self.metrics_fn = [precisionRecall_torch, f1_score, accuracy, balanced_accuracy]
 
     def detector_loss(self, pred, target, mask=None, loss_type="softmax"):
         """
@@ -392,11 +395,11 @@ class Train_model_heatmap(Train_model_frontend):
                     name="warped_gt",
                 )
 
-        pr_mean = self.batch_precision_recall(
+        metrics = self.compute_metrics(
             to_floatTensor(heatmap_org_nms_batch[:, np.newaxis, ...]),
             sample["labels_2D"],
         )
-        scalar_dict.update(pr_mean)
+        scalar_dict.update(metrics)
         running_data[task] = dict_sum(running_data[task], dict_only_primitives(scalar_dict))
 
         if (task == "train" and (n_iter % tb_interval == 0)) or (task == "val" and (n_iter == self.n_iter)):
@@ -443,22 +446,23 @@ class Train_model_heatmap(Train_model_frontend):
 
         return outs_res
 
-    @staticmethod
-    def batch_precision_recall(batch_pred, batch_labels):
-        precision_recall_list = []
-        for i in range(batch_labels.shape[0]):
-            precision_recall = precisionRecall_torch(batch_pred[i], batch_labels[i])
-            precision_recall_list.append(precision_recall)
-        precision = np.mean(
-            [
-                precision_recall["precision"]
-                for precision_recall in precision_recall_list
-            ]
-        )
-        recall = np.mean(
-            [precision_recall["recall"] for precision_recall in precision_recall_list]
-        )
-        return {"precision": precision, "recall": recall}
+    def compute_metrics(self, preds: Tensor, labels: Tensor) -> dict[float]:
+        """
+        Computes and returns the metrics defined in __init__ -> self.metrics_fn
+
+        Kwargs:
+            pred   <Tensor>: binary tensor [B, C, H, W]
+            labels <Tensor>: binary tensor [B, C, H, W]
+
+        Returns:
+            metrics <dict>
+        """
+        metrics = {}
+
+        for metric_fn in self.metrics_fn:
+            metrics.update(metric_fn(preds, labels))
+
+        return metrics
 
     @staticmethod
     def ext_from_points(labels_res, points):

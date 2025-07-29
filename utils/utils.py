@@ -8,8 +8,10 @@ from pathlib import Path
 import cv2
 import numpy as np
 import torch
-from torch import nn
+from sklearn.metrics import balanced_accuracy_score, f1_score as F1_score
+from torch import nn, Tensor
 from torch.nn import functional as F
+
 from utils.d2s import DepthToSpace, SpaceToDepth
 
 
@@ -881,18 +883,121 @@ def mAP(pred_batch, labels_batch):
     pass
 
 
-def precisionRecall_torch(pred, labels):
+def is_binary(tensor: Tensor) -> bool:
+    """
+    Returns True is the tensor is binary
+
+    Args:
+        tensor <Tensor>: input tensor
+
+    Returns:
+        bool
+    """
+    assert isinstance(tensor, Tensor), type(tensor)
+
+    values = tensor.unique()
+    if (1 <= values.numel() <= 2 and
+                (values.min().item() in [0, 1] and values.max().item() in [0, 1])
+            ):
+        return True
+
+    return False
+
+
+def f1_score(pred: Tensor, labels: Tensor) -> dict[float]:
+    r"""
+    Computes F1-score from provided predictions and labels (ground truth)
+
+    F1_score = \frac{2*TP}{2*TP+FP+FN}
+
+    Kwargs:
+        pred   <Tensor>: binary tensor [B, C, H, W]
+        labels <Tensor>: binary tensor [B, C, H, W]
+
+    Returns:
+        dict['balanced_accuracy': float]
+    """
+    assert isinstance(pred, Tensor), type(pred)
+    assert isinstance(labels, Tensor), type(labels)
+    assert pred.size() == labels.size()
+    assert is_binary(pred), pred.unique()
+    assert is_binary(labels), labels.unique()
+
+    score = F1_score(labels.ravel(), pred.ravel())
+
+    return {'f1_score': score}
+
+
+def accuracy(pred: Tensor, labels: Tensor) -> dict[float]:
+    r"""
+    Computes accuracy from provided predictions and labels (ground truth)
+
+    ACC = \frac{TP+TN}{TP+TN+FP+FN}
+
+    Kwargs:
+        pred   <Tensor>: binary tensor [B, C, H, W]
+        labels <Tensor>: binary tensor [B, C, H, W]
+
+    Returns:
+        dict['accuracy': float]
+    """
+    assert pred.size() == labels.size()
+    assert is_binary(pred), pred.unique()
+    assert is_binary(labels), labels.unique()
+
+    acc = (pred == labels).sum() / pred.numel()
+
+    assert 0 <= acc.item() <= 1, acc.item()
+
+    return {'accuracy': acc.item()}
+
+
+def balanced_accuracy(pred: Tensor, labels: Tensor) -> dict[float]:
+    r"""
+    Computes balanced accuracy from provided predictions and labels (ground truth)
+
+    BACC = \frac{TPR+TNR}{2}
+
+    Kwargs:
+        pred   <Tensor>: binary tensor [B, C, H, W]
+        labels <Tensor>: binary tensor [B, C, H, W]
+
+    Returns:
+        dict['balanced_accuracy': float]
+    """
+    assert isinstance(pred, Tensor), type(pred)
+    assert isinstance(labels, Tensor), type(labels)
+    assert pred.size() == labels.size()
+    assert is_binary(pred), pred.unique()
+    assert is_binary(labels), labels.unique()
+
+    bacc = balanced_accuracy_score(labels.ravel(), pred.ravel())
+
+    return {'balanced_accuracy': bacc}
+
+
+def precisionRecall_torch(pred: Tensor, labels: Tensor) -> dict[float]:
+    """
+    Computes precision and recall from provided predictions and labels (ground truth)
+
+    Kwargs:
+        pred   <Tensor>: binary tensor [B, C, H, W]
+        labels <Tensor>: binary tensor [B, C, H, W]
+
+    Returns:
+        dict['precision': float, 'recall': float]
+    """
+    assert isinstance(pred, Tensor), type(pred)
+    assert isinstance(labels, Tensor), type(labels)
+    assert pred.size() == labels.size(), (pred.size(), labels.size())
+    assert is_binary(pred), pred.unique()
+    assert is_binary(labels), labels.unique()
+
     offset = 10**-6
-    assert pred.size() == labels.size(), 'Sizes of pred, labels should match when you get the precision/recall!'
     precision = torch.sum(pred*labels) / (torch.sum(pred) + offset)
     recall = torch.sum(pred*labels) / (torch.sum(labels) + offset)
-    if precision.item() > 1.:
-        print(pred)
-        print(labels)
-        import scipy.io.savemat as savemat
-        savemat('pre_recall.mat', {'pred': pred, 'labels': labels})
-    assert precision.item() <= 1. and precision.item() >= 0.
-    return {'precision': precision, 'recall': recall}
+
+    return {'precision': precision.item(), 'recall': recall.item()}
 
 
 def precisionRecall(pred, labels, thd=None):
