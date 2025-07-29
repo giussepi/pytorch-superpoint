@@ -92,7 +92,7 @@ class Train_model_heatmap(Train_model_frontend):
 
         self.printImportantConfig()
 
-        # NOTE: all metrics must have the signature
+        # NOTE: all metrics must have the same signature
         self.metrics_fn = [precisionRecall_torch, f1_score, accuracy, balanced_accuracy]
 
     def detector_loss(self, pred, target, mask=None, loss_type="softmax"):
