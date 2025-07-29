@@ -4,6 +4,7 @@
 
 import os
 import logging
+import math
 from pathlib import Path
 
 import numpy as np
@@ -166,7 +167,9 @@ def pretrainedLoader(net, optimizer, path, mode='full', full_path=False) -> tupl
     mode: 'full' means the formats include the optimizer, epoch, and n_iter
     full_path: if not full path, we need to go through another helper function
     """
-    current_epoch = n_iter = 0
+    current_epoch = n_iter = best_epoch = 0
+    best_score = -math.inf
+    best_metrics = None
 
     # load checkpoint
     if full_path == True:
@@ -181,11 +184,14 @@ def pretrainedLoader(net, optimizer, path, mode='full', full_path=False) -> tupl
         # Handling the case of loading a legacy pretrained model, i.e., no current_epoch saved
         # In this case, you should set reset_epoch_iter to True in the YAML file, so warm start
         # is applied appropriately
-        current_epoch = checkpoint.get('current_epoch', 0)
+        current_epoch = checkpoint.get('current_epoch', current_epoch)
+        best_epoch = checkpoint.get('best_epoch', best_epoch)
+        best_score = checkpoint.get('best_score', best_score)
+        best_metrics = checkpoint.get('best_metrics', best_metrics)
     else:
         net.load_state_dict(checkpoint)
 
-    return net, optimizer, current_epoch, n_iter
+    return net, optimizer, current_epoch, n_iter, best_epoch, best_score, best_metrics
 
 
 if __name__ == '__main__':

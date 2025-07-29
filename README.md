@@ -209,6 +209,41 @@ python evaluation.py logs/sift_test/predictions --sift --repeatibility --homogra
 ### model from magicleap
 ```pretrained/superpoint_v1.pth```
 
+## Training rules
+
+Common values for config files .yaml
+
+### TRAIN NEW MODEL
+
+``` yaml
+retrain: true
+reset_epoch_iter: true
+```
+
+### CONTINUE TRAINING
+
+``` yaml
+retrain: false
+reset_epoch_iter: false
+pretrained: last checkpoint from an epoch (otherwise the self.n_iter won't have the correct value) OR
+            the global last checkpoint '*_last_model.pth.tar'
+```
+
+### WARM START
+
+``` yaml
+retrain: false
+reset_epoch_iter: true
+pretrained: any checkpoint
+```
+
+### ONLY PREDICTION MODE (TODO)
+
+``` yaml
+pretrained: any checkpoint
+```
+
+
 ## Jupyter notebook
 ```shell
 # show images saved in the folders

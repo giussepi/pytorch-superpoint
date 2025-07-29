@@ -896,9 +896,7 @@ def is_binary(tensor: Tensor) -> bool:
     assert isinstance(tensor, Tensor), type(tensor)
 
     values = tensor.unique()
-    if (1 <= values.numel() <= 2 and
-                (values.min().item() in [0, 1] and values.max().item() in [0, 1])
-            ):
+    if (1 <= values.numel() <= 2 and (values.min().item() in [0, 1] and values.max().item() in [0, 1])):
         return True
 
     return False
@@ -976,6 +974,52 @@ def balanced_accuracy(pred: Tensor, labels: Tensor) -> dict[float]:
     return {'balanced_accuracy': bacc}
 
 
+def precision(pred: Tensor, labels: Tensor) -> dict[float]:
+    """
+    Computes precision from provided predictions and labels (ground truth)
+
+    Kwargs:
+        pred   <Tensor>: binary tensor [B, C, H, W]
+        labels <Tensor>: binary tensor [B, C, H, W]
+
+    Returns:
+        dict['precision': float]
+    """
+    assert isinstance(pred, Tensor), type(pred)
+    assert isinstance(labels, Tensor), type(labels)
+    assert pred.size() == labels.size(), (pred.size(), labels.size())
+    assert is_binary(pred), pred.unique()
+    assert is_binary(labels), labels.unique()
+
+    offset = 10**-6
+    score = torch.sum(pred*labels) / (torch.sum(pred) + offset)
+
+    return {'precision': score.item()}
+
+
+def recall(pred: Tensor, labels: Tensor) -> dict[float]:
+    """
+    Computes recall from provided predictions and labels (ground truth)
+
+    Kwargs:
+        pred   <Tensor>: binary tensor [B, C, H, W]
+        labels <Tensor>: binary tensor [B, C, H, W]
+
+    Returns:
+        dict['recall': float]
+    """
+    assert isinstance(pred, Tensor), type(pred)
+    assert isinstance(labels, Tensor), type(labels)
+    assert pred.size() == labels.size(), (pred.size(), labels.size())
+    assert is_binary(pred), pred.unique()
+    assert is_binary(labels), labels.unique()
+
+    offset = 10**-6
+    score = torch.sum(pred*labels) / (torch.sum(labels) + offset)
+
+    return {'recall': score.item()}
+
+
 def precisionRecall_torch(pred: Tensor, labels: Tensor) -> dict[float]:
     """
     Computes precision and recall from provided predictions and labels (ground truth)
@@ -987,17 +1031,14 @@ def precisionRecall_torch(pred: Tensor, labels: Tensor) -> dict[float]:
     Returns:
         dict['precision': float, 'recall': float]
     """
-    assert isinstance(pred, Tensor), type(pred)
-    assert isinstance(labels, Tensor), type(labels)
-    assert pred.size() == labels.size(), (pred.size(), labels.size())
-    assert is_binary(pred), pred.unique()
-    assert is_binary(labels), labels.unique()
+    precision_ = precision(pred, labels)
+    recall_ = recall(pred, labels)
 
-    offset = 10**-6
-    precision = torch.sum(pred*labels) / (torch.sum(pred) + offset)
-    recall = torch.sum(pred*labels) / (torch.sum(labels) + offset)
+    scores = {}
+    scores.update(precision_)
+    scores.update(recall_)
 
-    return {'precision': precision.item(), 'recall': recall.item()}
+    return scores
 
 
 def precisionRecall(pred, labels, thd=None):

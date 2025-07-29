@@ -91,7 +91,7 @@ reset_epoch_iter: true  # use it with pretrained and retrain=False to apply WARM
 epochs: 100 # 50 - 100
 tensorboard_epoch_interval: 1  # number of data saved to tensorboard per epoch
 validations_per_epoch: 1  # number of validations to be run per epoch. Each validation is saved to tensorboard. So it's recommended that validations_per_epoch == tensorboard_epoch_interval and batch_size == eval_batch_size
-savings_per_epoch: 1  # number of checkpoints created per epoch. It can be equal to tensorboard_epoch_interval
+savings_per_epoch: -1  # number of checkpoints created per epoch. It can be equal to tensorboard_epoch_interval. Set it to -1 to disable it.
 
 pretrained:
 # pretrained: 'logs/superpoint_coco_heat2_0/checkpoints/superPointNet_90000_checkpoint.pth.tar'

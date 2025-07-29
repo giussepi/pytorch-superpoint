@@ -7,6 +7,7 @@ Date: 2019/12/12
 """
 
 import logging
+import math
 from pathlib import Path
 
 import numpy as np
@@ -70,6 +71,9 @@ class Train_model_frontend(object):
         self.subpixel = False
         self.epochs = config["epochs"]
         self.current_epoch = 0
+        self.best_epoch = 0  # Epoch when the best accuracy is achieved
+        self.best_score = -math.inf  # Best metrics average weighted sum after an epoch
+        self.best_metrics = None  # Overall best metrics based on best_accuracy
         self.n_iter = 0
         self.net = None
         self.optimizer = None
@@ -168,8 +172,8 @@ class Train_model_frontend(object):
             path = self.config["pretrained"]
             mode = "" if path[-4:] == ".pth" else "full"  # the suffix is '.pth' or 'tar.gz'
             logging.info("load pretrained model from: %s", path)
-            net, optimizer, self.current_epoch,  self.n_iter = pretrainedLoader(
-                net, optimizer, path, mode=mode, full_path=True)
+            net, optimizer, self.current_epoch,  self.n_iter, self.best_epoch, self.best_score, \
+                self.best_metrics = pretrainedLoader(net, optimizer, path, mode=mode, full_path=True)
 
             # LOADING A LEGACY PRETRAINED MODEL CASE
             if self.n_iter != 0 and self.current_epoch == 0:
@@ -178,7 +182,9 @@ class Train_model_frontend(object):
 
             # WARM START CASE
             if self.config["reset_epoch_iter"]:
-                self.current_epoch = self.n_iter = 0
+                self.current_epoch = self.n_iter = self.best_epoch = 0
+                self.best_score = -math.inf
+                self.best_metrics = None
 
             logging.info("successfully load pretrained model from: %s", path)
 
@@ -259,10 +265,12 @@ class Train_model_frontend(object):
                             False
                         )
                 # save model
-                if self.n_iter % saving_interval == 0:
+                if saving_interval > 0 and (self.n_iter % saving_interval == 0):
                     self.saveModel()
 
             self.writer.flush()
+
+        self.save_last_model()
 
         logging.info("End training: %d", self.n_iter)
 
@@ -528,10 +536,10 @@ class Train_model_frontend(object):
 
         return loss.item()
 
-    def saveModel(self):
+    def saveModel(self, filename='checkpoint.pth.tar'):
         """
         save checkpoint for resuming training
-        :return:
+        :param filename:
         """
         model_state_dict = self.net.module.state_dict()
         save_checkpoint(
@@ -541,12 +549,27 @@ class Train_model_frontend(object):
                 "current_epoch": self.current_epoch,
                 "model_state_dict": model_state_dict,
                 "optimizer_state_dict": self.optimizer.state_dict(),
+                "best_epoch": self.best_epoch,
+                "best_score": self.best_score,
+                "best_metrics": self.best_metrics,
                 # TODO: it seems there's not point on saving the loss. So remove it and test if
                 #       everything still works
                 "loss": self.loss,
             },
-            self.current_epoch, self.n_iter
+            self.current_epoch, self.n_iter, filename
         )
+
+    def save_best_model(self):
+        """ saves the checkpoint using 'best_model.pth.tar' as filename """
+        # removing previous best model checkpoints
+        for _ in self.save_path.glob('*_best_model.pth.tar'):
+            _.unlink()
+        # saving current best model
+        self.saveModel('best_model.pth.tar')
+
+    def save_last_model(self):
+        """ saves the checkpoint using 'last_model.pth.tar' as filename """
+        self.saveModel('last_model.pth.tar')
 
     def add_single_image_to_tb(self, task, img_tensor, n_iter, name="img"):
         """

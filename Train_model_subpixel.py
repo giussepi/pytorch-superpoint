@@ -4,6 +4,7 @@ script for subpixel experiment (not tested)
 """
 
 import logging
+import math
 from pathlib import Path
 
 import torch
@@ -29,6 +30,9 @@ class Train_model_subpixel(Train_model_frontend):
         self.cell_size = 8
         self.epochs = config["epochs"]
         self.current_epoch = 0
+        self.best_epoch = 0  # Epoch when the best accuracy is achieved
+        self.best_score = -math.inf  # Best metrics average weighted sum after an epoch
+        self.best_metrics = None  # Overall best metrics based on best_accuracy
         self.n_iter = 0
         self.net = None
         self.optimizer = None

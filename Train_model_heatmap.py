@@ -6,8 +6,10 @@ Date: 2019/12/12
 """
 
 import logging
+from copy import deepcopy
 from pathlib import Path
 
+import math
 import numpy as np
 import torch
 import torch.optim
@@ -22,8 +24,8 @@ from utils.loader import dataLoader
 from utils.losses import do_log, extract_patches, soft_argmax_2d, norm_patches
 from utils.tools import dict_update
 from utils.utils import (
-    precisionRecall_torch, flattenDetection, toNumpy, img_overlap, to_floatTensor, labels2Dto3D,
-    getPtsFromHeatmap, f1_score, accuracy, balanced_accuracy)
+    flattenDetection, toNumpy, img_overlap, to_floatTensor, labels2Dto3D,
+    getPtsFromHeatmap, precision, recall, f1_score, accuracy, balanced_accuracy)
 
 
 __all__ = [
@@ -68,6 +70,14 @@ class Train_model_heatmap(Train_model_frontend):
         self.subpixel = False
         self.epochs = config["epochs"]
         self.current_epoch = 0
+        self.best_epoch = 0  # Epoch when the best score is achieved
+        self.best_score = -math.inf  # Best metrics average weighted sum after an epoch
+        self.best_metrics = None  # Overall best metrics based on best_score
+        # NOTE: all metrics must have the same signature
+        self.metrics_fn = [precision, recall, f1_score, accuracy, balanced_accuracy]
+        # used to compute the score to determine the best model
+        self.metrics_weights = [0, 1, 0, 0, 0]
+        self.metrics_keys = [_.__name__ for _ in self.metrics_fn]
         self.n_iter = 0
         self.net = None
         self.optimizer = None
@@ -91,9 +101,6 @@ class Train_model_heatmap(Train_model_frontend):
             self.desc_loss_type = "sparse"
 
         self.printImportantConfig()
-
-        # NOTE: all metrics must have the same signature
-        self.metrics_fn = [precisionRecall_torch, f1_score, accuracy, balanced_accuracy]
 
     def detector_loss(self, pred, target, mask=None, loss_type="softmax"):
         """
@@ -133,6 +140,23 @@ class Train_model_heatmap(Train_model_frontend):
         ]
         nms_overlap = np.stack(nms_overlap, axis=0)
         images_dict.update({name + "_nms_overlap": nms_overlap})
+
+    def compute_score(self, data: dict) -> float:
+        """
+        Computes the overall score considering the metrics weights
+
+        Kwargs:
+            data <dict>: dictionary containing averaged scores
+
+        Returns:
+            score <float>
+        """
+        assert isinstance(data, dict), type(data)
+
+        score = sum(data[k]*w for k, w in zip(self.metrics_keys, self.metrics_weights))
+        score /= sum(self.metrics_weights)
+
+        return score
 
     def train_val_sample(self, sample, tb_interval, running_data, n_iter=0, train=False):
         """
@@ -405,6 +429,18 @@ class Train_model_heatmap(Train_model_frontend):
         if (task == "train" and (n_iter % tb_interval == 0)) or (task == "val" and (n_iter == self.n_iter)):
             logging.info("%s current iteration: %d", task, n_iter)
             running_data[task] = dict_div_by_scalar(running_data[task], tb_interval)  # data per batch
+            running_data[task]['overall_score'] = self.compute_score(running_data[task])
+
+            if task == 'val' and running_data[task]['overall_score'] > self.best_score:
+                self.best_score = running_data[task]['overall_score']
+                self.best_metrics = deepcopy(running_data[task])
+                self.best_epoch = self.current_epoch
+                logging.info(
+                    "Best overall score of %.4f achieved at epoch %d iteration %d",
+                    self.best_score, self.best_epoch, self.n_iter
+                )
+                self.save_best_model()
+
             self.printLosses(running_data[task], task)
             # self.tb_images_dict(task, images_dict, max_img=2)
             # self.tb_hist_dict(task, hist_dict)
