@@ -440,10 +440,13 @@ class PointTracker(object):
                     [d_i index, d_j' index, match_score]^T
         """
         assert desc1.shape[0] == desc2.shape[0]
+
         if desc1.shape[1] == 0 or desc2.shape[1] == 0:
             return np.zeros((3, 0))
+
         if nn_thresh < 0.0:
             raise ValueError('\'nn_thresh\' should be non-negative')
+
         # Compute L2 distance. Easy since vectors are unit normalized.
         dmat = np.dot(desc1.T, desc2)
         dmat = np.sqrt(2 - 2 * np.clip(dmat, -1, 1))
@@ -467,6 +470,7 @@ class PointTracker(object):
         matches[1, :] = m_idx2
         matches[2, :] = scores
         self.mscores = matches
+
         return matches
 
     def get_offsets(self):
@@ -483,6 +487,7 @@ class PointTracker(object):
             offsets.append(self.all_pts[i].shape[1])
         offsets = np.array(offsets)
         offsets = np.cumsum(offsets)
+
         return offsets
 
     def get_matches(self):
@@ -570,8 +575,6 @@ class PointTracker(object):
         self.last_desc = desc.copy()
         self.last_pts = pts[:2, :].copy()
 
-        return
-
     def get_tracks(self, min_length):
         """ Retrieve point tracks of a given minimum length.
         Input
@@ -588,37 +591,5 @@ class PointTracker(object):
         not_headless = (self.tracks[:, -1] != -1)
         keepers = np.logical_and.reduce((valid, good_len, not_headless))
         returned_tracks = self.tracks[keepers, :].copy()
-        return returned_tracks
 
-    def draw_tracks(self, out, tracks):
-        """ Visualize tracks all overlayed on a single image.
-        Inputs
-          out - numpy uint8 image sized HxWx3 upon which tracks are overlayed.
-          tracks - M x (2+L) sized matrix storing track info.
-        """
-        # Store the number of points per camera.
-        pts_mem = self.all_pts
-        N = len(pts_mem)  # Number of cameras/images.
-        # Get offset ids needed to reference into pts_mem.
-        offsets = self.get_offsets()
-        # Width of track and point circles to be drawn.
-        stroke = 1
-        # Iterate through each track and draw it.
-        for track in tracks:
-            clr = myjet[int(np.clip(np.floor(track[1] * 10), 0, 9)), :] * 255
-            for i in range(N - 1):
-                if track[i + 2] == -1 or track[i + 3] == -1:
-                    continue
-                offset1 = offsets[i]
-                offset2 = offsets[i + 1]
-                idx1 = int(track[i + 2] - offset1)
-                idx2 = int(track[i + 3] - offset2)
-                pt1 = pts_mem[i][:2, idx1]
-                pt2 = pts_mem[i + 1][:2, idx2]
-                p1 = (int(round(pt1[0])), int(round(pt1[1])))
-                p2 = (int(round(pt2[0])), int(round(pt2[1])))
-                cv2.line(out, p1, p2, clr, thickness=stroke, lineType=16)
-                # Draw end points of each track.
-                if i == N - 2:
-                    clr2 = (255, 0, 0)
-                    cv2.circle(out, p2, stroke, clr2, -1, lineType=16)
+        return returned_tracks
