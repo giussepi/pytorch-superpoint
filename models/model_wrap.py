@@ -7,6 +7,8 @@ import numpy as np
 import torch
 from torch import nn
 
+from models.SuperPointNet_pretrained import SuperPointNet
+from utils.loader import modelLoader
 from utils.utils import toNumpy
 
 
@@ -22,6 +24,7 @@ def labels2Dto3D(cell_size, labels):
     dustbin = 1 - dustbin
     dustbin[dustbin < 0] = 0
     labels = np.concatenate((labels, dustbin[np.newaxis, :, :]), axis=0)
+
     return labels
 
 
@@ -64,43 +67,17 @@ class SuperPointFrontend_torch(object):
     def loadModel(self, weights_path):
         # Load the network in inference mode.
         if weights_path[-4:] == '.tar':
-            trained = True
-        # if cuda:
-        #     # Train on GPU, deploy on GPU.
-        #     self.net.load_state_dict(torch.load(weights_path))
-
-        # else:
-            # Train on GPU, deploy on CPU.
-
-            # trained = False
-        if trained:
-            # if self.subpixel:
-            #     model = 'SubpixelNet'
-            #     params = self.config['model']['subpixel']['params']
-            # else:
-            #     model = 'SuperPointNet'
-            #     params = {}
             model = self.config['model']['name']
             params = self.config['model']['params']
             print("model: ", model)
-
-            from utils.loader import modelLoader
             self.net = modelLoader(model=model, **params)
-            # from models.SuperPointNet import SuperPointNet
-            # self.net = SuperPointNet()
-            checkpoint = torch.load(weights_path,
-                                    map_location=lambda storage, loc: storage)
+            checkpoint = torch.load(weights_path, map_location=lambda storage, loc: storage)
             self.net.load_state_dict(checkpoint['model_state_dict'])
         else:
-            from models.SuperPointNet_pretrained import SuperPointNet
             self.net = SuperPointNet()
-            self.net.load_state_dict(torch.load(weights_path,
-                                                map_location=lambda storage, loc: storage))
-        # if grad==False:
-            # torch.no_grad(
-        # self.net = self.net.cuda()
+            self.net.load_state_dict(torch.load(weights_path, map_location=lambda storage, loc: storage))
+
         self.net = self.net.to(self.device)
-        # self.net.eval()
 
     def net_parallel(self):
         print("=== Let's use", torch.cuda.device_count(), "GPUs!")
