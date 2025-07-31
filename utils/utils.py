@@ -572,8 +572,6 @@ def getPtsFromHeatmap(heatmap: np.ndarray | Tensor, conf_thresh: float, nms_dist
     pts[1, :] = xs
     pts[2, :] = heatmap[xs, ys]
     pts, _ = nms_fast(pts, H, W, dist_thresh=nms_dist)  # Apply NMS.
-    inds = np.argsort(pts[2, :])
-    pts = pts[:, inds[::-1]]  # Sort by confidence.
     # Remove points along border.
     bord = border_remove
     toremoveW = np.logical_or(pts[0, :] < bord, pts[0, :] >= (W - bord))
