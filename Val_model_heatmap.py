@@ -47,7 +47,6 @@ class Val_model_heatmap(SuperPointFrontend_torch):
         self.cell = 8  # deprecated
         self.cell_size = 8  # Size of each output cell. Keep this fixed.
         self.border_remove = 4  # Remove points this close to the border.
-        self.sparsemap = None
         self.heatmap = None  # np[batch, 1, H, W]
         self.pts = None
         self.pts_subpixel = None
