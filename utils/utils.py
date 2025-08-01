@@ -654,6 +654,7 @@ def nms_fast(in_corners: np.ndarray, H: int, W: int, dist_thresh: int):
     assert isinstance(H, int), type(H)
     assert isinstance(W, int), type(W)
     assert isinstance(dist_thresh, int), type(dist_thresh)
+    assert dist_thresh >= 0, dist_thresh
 
     grid = np.zeros((H, W)).astype(int)  # Track NMS data.
     inds = np.zeros((H, W)).astype(int)  # Store indices of points.
