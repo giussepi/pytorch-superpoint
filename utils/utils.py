@@ -54,39 +54,6 @@ def save_path_formatter(args, parser):
     return Path('.')
 
 
-'''
-def save_path_formatter(args, parser):
-    def is_default(key, value):
-        return value == parser.get_default(key)
-    args_dict = vars(args)
-    # data_folder_name = str(Path(args_dict['data']).normpath().name)
-    data_folder_name = str(Path(args_dict['data']))
-    folder_string = [data_folder_name]
-    if not is_default('epochs', args_dict['epochs']):
-        folder_string.append('{}epochs'.format(args_dict['epochs']))
-    keys_with_prefix = OrderedDict()
-    keys_with_prefix['epoch_size'] = 'epoch_size'
-    keys_with_prefix['sequence_length'] = 'seq'
-    keys_with_prefix['rotation_mode'] = 'rot_'
-    keys_with_prefix['padding_mode'] = 'padding_'
-    keys_with_prefix['batch_size'] = 'b'
-    keys_with_prefix['lr'] = 'lr'
-    keys_with_prefix['photo_loss_weight'] = 'p'
-    keys_with_prefix['mask_loss_weight'] = 'm'
-    keys_with_prefix['smooth_loss_weight'] = 's'
-
-    for key, prefix in keys_with_prefix.items():
-        value = args_dict[key]
-        if not is_default(key, value):
-            folder_string.append('{}{}'.format(prefix, value))
-    save_path = Path(','.join(folder_string))
-    timestamp = datetime.datetime.now().strftime("%m-%d-%H:%M")
-    return save_path/timestamp
-
-    # return ''
-'''
-
-
 def tensor2array(tensor, max_value=255, colormap='rainbow', channel_first=True):
     tensor = tensor.detach().cpu()
     if max_value is None:
@@ -118,8 +85,6 @@ def tensor2array(tensor, max_value=255, colormap='rainbow', channel_first=True):
         if not channel_first:
             array = array.transpose(1, 2, 0)
     return array
-
-# from utils.utils import find_files_with_ext
 
 
 def find_files_with_ext(directory, extension='.npz'):
@@ -571,7 +536,7 @@ def getPtsFromHeatmap(heatmap: np.ndarray | Tensor, conf_thresh: float, nms_dist
     pts[0, :] = ys
     pts[1, :] = xs
     pts[2, :] = heatmap[xs, ys]
-    pts, _ = nms_fast(pts, H, W, dist_thresh=nms_dist)  # Apply NMS.
+    pts, _ = nms_fast(pts, H, W, nms_dist)  # Apply NMS.
     # Remove points along border.
     bord = border_remove
     toremoveW = np.logical_or(pts[0, :] < bord, pts[0, :] >= (W - bord))
@@ -623,81 +588,64 @@ def box_nms(prob, size, iou=0.1, min_prob=0.01, keep_top_k=0):
     return prob_nms
 
 
-def nms_fast(in_corners: np.ndarray, H: int, W: int, dist_thresh: int):
+def nms_fast(input_: np.ndarray, height: int, width: int, radius: int) -> tuple[np.ndarray]:
     """
-    Run a faster approximate Non-Max-Suppression on numpy corners shaped:
-      3xN [x_i,y_i,conf_i]^T
+    Applies Non-Maximum Suppression (NMS) over the input_ corners
 
-    Algo summary: Create a grid sized HxW. Assign each corner location a 1, rest
-    are zeros. Iterate through all the 1's and convert them either to -1 or 0.
-    Suppress points by setting nearby values to 0.
-
-    Grid Value Legend:
-    -1 : Kept.
-     0 : Empty or suppressed.
-     1 : To be processed (converted to either kept or supressed).
-
-    NOTE: The NMS first rounds points to integers, so NMS distance might not
-    be exactly dist_thresh. It also assumes points are within image boundaries.
-
-    Inputs
-      in_corners - 3xN numpy array with corners [x_i, y_i, confidence_i]^T.
-      H - Image height.
-      W - Image width.
-      dist_thresh - Distance to suppress, measured as an infinty norm distance.
+    Kwargs:
+        input_ <np.ndarray>: 3xN np.ndarrary containing corners
+                             [[x_i,          ...,          x_n],
+                              [y_i,          ...,          y_n],
+                              [confidence_i, ..., confidence_n]]
+        height        <int>: Image height
+        width         <int>: Image width
+        radius        <int>: Radius to suppress
 
     Returns
-      nmsed_corners - 3xN numpy matrix with surviving corners.
-      nmsed_inds - N length numpy vector with surviving corner indices.
+        selected_corners <np.ndarray>, selected_corner_idxs <np.ndarray>
     """
-    assert isinstance(in_corners, np.ndarray), type(in_corners)
-    assert isinstance(H, int), type(H)
-    assert isinstance(W, int), type(W)
-    assert isinstance(dist_thresh, int), type(dist_thresh)
-    assert dist_thresh >= 0, dist_thresh
+    assert isinstance(input_, np.ndarray), type(input_)
+    assert isinstance(height, int), type(height)
+    assert isinstance(width, int), type(width)
+    assert isinstance(radius, int), type(radius)
+    assert radius >= 0, radius
 
-    grid = np.zeros((H, W)).astype(int)  # Track NMS data.
-    inds = np.zeros((H, W)).astype(int)  # Store indices of points.
-    # Sort by confidence and round to nearest int.
-    inds1 = np.argsort(-in_corners[2, :])  # indexes in descending order
-    corners = in_corners[:, inds1]  # corners in descending order
-    rcorners = corners[:2, :].astype(int)
+    # empty inpuy_ case
+    if input_.size == 0:
+        return np.zeros((3, 0)), np.zeros(0)
 
-    # Check for edge case of 0 or 1 corners.
-    if rcorners.shape[1] == 0:
-        return np.zeros((3, 0), dtype=int), np.zeros(0, dtype=int)
-    if rcorners.shape[1] == 1:
-        out = np.vstack((rcorners, in_corners[2])).reshape(3, 1)
-        return out, np.zeros((1), dtype=int)
+    canvas = np.zeros((height, width), dtype=float)
+    # Sorting corners in descending order based on their confidence score
+    sorted_idxs = np.argsort(-input_[2, :])
+    sorted_corners = input_[:, sorted_idxs]
 
-    # Initialize the grid.
-    for i, rc in enumerate(rcorners.T):
-        grid[rcorners[1, i], rcorners[0, i]] = 1
-        inds[rcorners[1, i], rcorners[0, i]] = i
+    # Drawing corners in the canvas
+    for corner in sorted_corners.T:
+        canvas[int(corner[1]), int(corner[0])] = corner[2]
 
-    # Pad the border of the grid, so that we can NMS points near the border.
-    pad = dist_thresh
-    grid = np.pad(grid, ((pad, pad), (pad, pad)), mode='constant')
+    # Applying NMS over the sorted corners
+    selected_corner_idxs = []
+    for idx, corner in zip(sorted_idxs, sorted_corners.T):
+        pt = (int(corner[1]), int(corner[0]))
+        if canvas[pt[0], pt[1]] > 0:  # consider negative confidence ???
+            neighborhood = canvas[max(pt[0] - radius, 0):min(pt[0] + radius + 1, height),
+                                  max(pt[1] - radius, 0):min(pt[1] + radius + 1, width)]
+            max_val = neighborhood.max()
+            neighborhood[neighborhood < max_val] = 0
+            # NOTE 1: in case there are two or more cell with val = max_val, their index values
+            #         will be correctly added to selected_corner_idxs in subsequent iterations because
+            #         their canvas values > 0
+            # NOTE 2: it is safe to add idx to selected_corner_idxs because it always belongs to the
+            #         current non-processed maximum confidence score (we're iterating sorted_corners).
+            #         The fact that it's being iterted means it hasn't been suppressed by previous
+            #         points; however, it can suppress non-maximum values falling inside its covering area
+            #         defined by the radius.
+            selected_corner_idxs.append(idx)
 
-    # Iterate through points, highest to lowest conf, suppress neighborhood.
-    for i, rc in enumerate(rcorners.T):
-        # Account for top and left padding.
-        pt = (rc[0] + pad, rc[1] + pad)
-        if grid[pt[1], pt[0]] == 1:  # If not yet suppressed.
-            grid[pt[1] - pad:pt[1] + pad + 1, pt[0] - pad:pt[0] + pad + 1] = 0
-            grid[pt[1], pt[0]] = -1
+    selected_corners = input_[:, selected_corner_idxs]
+    selected_corner_idxs = np.array(selected_corner_idxs)
 
-    # Get all surviving -1's and return sorted array of remaining corners.
-    keepy, keepx = np.where(grid == -1)
-    keepy, keepx = keepy - pad, keepx - pad
-    inds_keep = inds[keepy, keepx]  # N  # filtered idxs
-    out = corners[:, inds_keep]  # 3, N
-    values = out[-1, :]  # N conf intervals
-    inds2 = np.argsort(-values)  # N filtered and sorted idxs
-    out = out[:, inds2]  # 3, N filtered and sorted corners descending based on conf interval
-    out_inds = inds1[inds_keep[inds2]]  # N
-
-    return out, out_inds
+    return selected_corners, selected_corner_idxs
 
 
 def compute_valid_mask(image_shape, inv_homography, device='cpu', erosion_radius=0):
