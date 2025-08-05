@@ -589,8 +589,17 @@ def box_nms(prob, size, iou=0.1, min_prob=0.01, keep_top_k=0):
 
 
 def nms_fast(input_: np.ndarray, height: int, width: int, radius: int) -> tuple[np.ndarray]:
-    """
+    r"""
     Applies Non-Maximum Suppression (NMS) over the input_ corners
+
+                            Width
+                        H ┌───────► X
+                        e │
+                        i │
+                        g │
+                        h │
+                        t ▼
+                          Y
 
     Kwargs:
         input_ <np.ndarray>: 3xN np.ndarrary containing corners
@@ -621,12 +630,12 @@ def nms_fast(input_: np.ndarray, height: int, width: int, radius: int) -> tuple[
 
     # Drawing corners in the canvas
     for corner in sorted_corners.T:
-        canvas[int(corner[1]), int(corner[0])] = corner[2]
+        canvas[int(corner[1]), int(corner[0])] = corner[2]  # canvas[y_i, x_i] = confidence_i
 
     # Applying NMS over the sorted corners
     selected_corner_idxs = []
     for idx, corner in zip(sorted_idxs, sorted_corners.T):
-        pt = (int(corner[1]), int(corner[0]))
+        pt = (int(corner[1]), int(corner[0]))  # (y_i, x_i)
         if canvas[pt[0], pt[1]] > 0:  # consider negative confidence ???
             neighborhood = canvas[max(pt[0] - radius, 0):min(pt[0] + radius + 1, height),
                                   max(pt[1] - radius, 0):min(pt[1] + radius + 1, width)]
