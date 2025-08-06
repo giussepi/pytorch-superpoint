@@ -189,7 +189,6 @@ class SuperPointFrontend_torch(object):
             if verbose:
                 print("after: ", pts_subpixel[:, :5])
         return pts_subpixel
-        pass
 
     def run(self, inp, onlyHeatmap=False, train=True):
         """ Process a numpy image to extract points and descriptors.
