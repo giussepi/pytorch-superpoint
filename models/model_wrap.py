@@ -34,14 +34,6 @@ def labels2Dto3D(cell_size, labels):
 
 class SuperPointFrontend_torch(object):
     """ Wrapper around pytorch net to help with pre and post image processing. """
-    '''
-    * SuperPointFrontend_torch:
-    ** note: the input, output is different from that of SuperPointFrontend
-    heatmap: torch (batch_size, H, W, 1)
-    dense_desc: torch (batch_size, H, W, 256)
-    pts: [batch_size, np (N, 3)]
-    desc: [batch_size, np(256, N)]
-    '''
 
     def __init__(self, config, weights_path, nms_dist, conf_thresh, nn_thresh,
                  cuda=False, trained=False, device='cpu', grad=False, load=True):
