@@ -513,36 +513,53 @@ def sample_homo(image):
     return mat
 
 
-def getPtsFromHeatmap(heatmap: np.ndarray | Tensor, conf_thresh: float, nms_dist: int, border_remove: int = 4):
-    """
+def extract_points(
+        heatmap: np.ndarray | Tensor, conf_thresh: float,
+        nms_radius: int,
+        inner_margin: int = 4
+) -> np.ndarray:
+    r"""
+    Extracts points from the given heatmap following the provided arguments
+
+                            Width
+                        H ┌───────► X
+                        e │
+                        i │
+                        g │
+                        h │
+                        t ▼
+                          Y
+
     Kwargs:
-        heatmap <np.ndarray>:
-        conf_thresh    <int>:
-        nms_dist       <int>:
-        border_remove  <int>: default 4
+        heatmap <np.ndarray>: 2D matrix containing points confidences thresholds
+        conf_thresh  <float>: Confidence threshold to be applied to the heatmap
+        nms_radius     <int>: Non-maximum Suppression (NMS) radius
+        inner_margin   <int>: Number of pixels utilised to define heatmaps borders free of
+                              points/confidence scores.
+                              Default 4
+
+    Returns:
+        points <np.ndarrary>
     """
     assert isinstance(heatmap, (np.ndarray, Tensor)), type(heatmap)
     assert isinstance(conf_thresh, float), type(conf_thresh)
-    assert isinstance(nms_dist, int), type(nms_dist)
-    assert isinstance(border_remove, int), type(border_remove)
+    assert 0 <= conf_thresh <= 1, conf_thresh
+    assert isinstance(nms_radius, int), type(nms_radius)
+    assert isinstance(inner_margin, int), type(inner_margin)
 
-    H, W = heatmap.shape[0], heatmap.shape[1]
-    xs, ys = np.where(heatmap >= conf_thresh)  # Confidence threshold.
+    H, W = heatmap.shape[:2]
+    # Points filtering based on conf_thresh
+    ys, xs = np.where(heatmap >= conf_thresh)
 
-    if len(xs) == 0:
-        return np.zeros((3, 0))
+    pts = np.stack([xs, ys, heatmap[ys, xs]])
+    # Applying Non-maximum Suppression (NMS)
+    pts = apply_nms(pts, H, W, nms_radius)[0]
 
-    pts = np.zeros((3, len(xs)))  # Populate point data sized 3xN.
-    pts[0, :] = ys
-    pts[1, :] = xs
-    pts[2, :] = heatmap[xs, ys]
-    pts, _ = nms_fast(pts, H, W, nms_dist)  # Apply NMS.
-    # Remove points along border.
-    bord = border_remove
-    toremoveW = np.logical_or(pts[0, :] < bord, pts[0, :] >= (W - bord))
-    toremoveH = np.logical_or(pts[1, :] < bord, pts[1, :] >= (H - bord))
-    toremove = np.logical_or(toremoveW, toremoveH)
-    pts = pts[:, ~toremove]
+    # Getting rid of points close to the heatmap borders
+    selected_xs = (pts[0] >= inner_margin) * (pts[0] < W - inner_margin)
+    selected_ys = (pts[1] >= inner_margin) * (pts[1] < H - inner_margin)
+    selected_pts = selected_xs * selected_ys
+    pts = pts[:, selected_pts]
 
     return pts
 
@@ -588,7 +605,7 @@ def box_nms(prob, size, iou=0.1, min_prob=0.01, keep_top_k=0):
     return prob_nms
 
 
-def nms_fast(input_: np.ndarray, height: int, width: int, radius: int) -> tuple[np.ndarray]:
+def apply_nms(input_: np.ndarray, height: int, width: int, radius: int) -> tuple[np.ndarray]:
     r"""
     Applies Non-Maximum Suppression (NMS) over the input_ corners
 
@@ -610,7 +627,7 @@ def nms_fast(input_: np.ndarray, height: int, width: int, radius: int) -> tuple[
         width         <int>: Image width
         radius        <int>: Radius to suppress
 
-    Returns
+    Returns:
         selected_corners <np.ndarray>, selected_corner_idxs <np.ndarray>
     """
     assert isinstance(input_, np.ndarray), type(input_)

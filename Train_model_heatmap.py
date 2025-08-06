@@ -25,7 +25,7 @@ from utils.losses import do_log, extract_patches, soft_argmax_2d, norm_patches
 from utils.tools import dict_update
 from utils.utils import (
     flattenDetection, toNumpy, img_overlap, to_floatTensor, labels2Dto3D,
-    getPtsFromHeatmap, precision, recall, f1_score, accuracy, balanced_accuracy)
+    extract_points, precision, recall, f1_score, accuracy, balanced_accuracy)
 
 
 __all__ = [
@@ -585,7 +585,7 @@ class Train_model_heatmap(Train_model_frontend):
             heatmap: np [(1), H, W]
         """
         heatmap = heatmap.squeeze()
-        pts_nms = getPtsFromHeatmap(heatmap, conf_thresh, nms_dist)
+        pts_nms = extract_points(heatmap, conf_thresh, nms_dist)
         semi_thd_nms_sample = np.zeros_like(heatmap)
         semi_thd_nms_sample[
             pts_nms[1, :].astype(int), pts_nms[0, :].astype(int)

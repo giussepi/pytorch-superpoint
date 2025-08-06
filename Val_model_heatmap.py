@@ -112,7 +112,7 @@ class Val_model_heatmap(SuperPointFrontend_torch):
     def heatmap_to_pts(self):
         heatmap_np = self.heatmap
 
-        pts_nms_batch = [self.getPtsFromHeatmap(h) for h in heatmap_np]  # [batch, H, W]
+        pts_nms_batch = [self.extract_points(h) for h in heatmap_np]  # [batch, H, W]
         self.pts_nms_batch = pts_nms_batch
         return pts_nms_batch
 
@@ -145,7 +145,7 @@ class Val_model_heatmap(SuperPointFrontend_torch):
     #     pass
 
     def desc_to_sparseDesc(self):
-        # pts_nms_batch = [self.getPtsFromHeatmap(h) for h in heatmap_np]
+        # pts_nms_batch = [self.extract_points(h) for h in heatmap_np]
         desc_sparse_batch = [self.sample_desc_from_points(self.outs['desc'], pts) for pts in self.pts_nms_batch]
         self.desc_sparse_batch = desc_sparse_batch
         return desc_sparse_batch

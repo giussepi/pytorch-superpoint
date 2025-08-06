@@ -9,7 +9,7 @@ from torch import nn, Tensor
 
 from models.SuperPointNet_pretrained import SuperPointNet
 from utils.loader import modelLoader
-from utils.utils import toNumpy, getPtsFromHeatmap as getPtsFromHeatmap_
+from utils.utils import toNumpy, extract_points
 
 
 def labels2Dto3D(cell_size, labels):
@@ -146,8 +146,8 @@ class SuperPointFrontend_torch(object):
         patches = np.stack(patches)
         return patches
 
-    def getPtsFromHeatmap(self, heatmap: np.ndarray | Tensor):
-        return getPtsFromHeatmap_(heatmap, self.conf_thresh, self.nms_dist, self.border_remove)
+    def extract_points(self, heatmap: np.ndarray | Tensor):
+        return extract_points(heatmap, self.conf_thresh, self.nms_dist, self.border_remove)
 
     def sample_desc_from_points(self, coarse_desc, pts):
         # --- Process descriptor.
@@ -238,10 +238,10 @@ class SuperPointFrontend_torch(object):
             return heatmap
 
         # extract keypoints
-        # pts = [self.getPtsFromHeatmap(heatmap[i,:,:,:].cpu().detach().numpy().squeeze()).transpose() for i in range(batch_size)]
-        # pts = [self.getPtsFromHeatmap(heatmap[i,:,:,:].cpu().detach().numpy().squeeze()) for i in range(batch_size)]
+        # pts = [self.extract_points(heatmap[i,:,:,:].cpu().detach().numpy().squeeze()).transpose() for i in range(batch_size)]
+        # pts = [self.extract_points(heatmap[i,:,:,:].cpu().detach().numpy().squeeze()) for i in range(batch_size)]
         # print("heapmap shape: ", heatmap.shape)
-        pts = [self.getPtsFromHeatmap(heatmap[i, :, :, :].cpu().detach().numpy()) for i in range(batch_size)]
+        pts = [self.extract_points(heatmap[i, :, :, :].cpu().detach().numpy()) for i in range(batch_size)]
         self.pts = pts
 
         if self.subpixel:
