@@ -276,7 +276,7 @@ def export_detector_homoAdapt_gpu(config, output_dir, args):
                 continue
 
         # pass through network
-        heatmap = fe.run(img, onlyHeatmap=True, train=False)
+        heatmap = fe.run(img, only_heatmap=True, train=False)
         outputs = combine_heatmap(heatmap, inv_homographies, mask_2D, device=device)
         pts = fe.extract_points(outputs.detach().cpu().squeeze())  # (x,y, prob)
 

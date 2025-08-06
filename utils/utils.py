@@ -542,6 +542,7 @@ def extract_points(
         points <np.ndarrary>
     """
     assert isinstance(heatmap, (np.ndarray, Tensor)), type(heatmap)
+    assert len(heatmap.shape) == 2
     assert isinstance(conf_thresh, float), type(conf_thresh)
     assert 0 <= conf_thresh <= 1, conf_thresh
     assert isinstance(nms_radius, int), type(nms_radius)

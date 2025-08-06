@@ -1,4 +1,7 @@
-""" class to process superpoint net
+# -*- coding: utf-8 -*-
+""" models/model_wrap.py
+
+class to process superpoint net
 # may be some duplication with model_wrap.py
 # PointTracker is from Daniel's repo.
 """
@@ -9,7 +12,8 @@ from torch import nn, Tensor
 
 from models.SuperPointNet_pretrained import SuperPointNet
 from utils.loader import modelLoader
-from utils.utils import toNumpy, extract_points
+from utils.losses import extract_patch_from_points, soft_argmax_2d, norm_patches, do_log
+from utils.utils import toNumpy, extract_points, flattenDetection
 
 
 def labels2Dto3D(cell_size, labels):
@@ -102,48 +106,37 @@ class SuperPointFrontend_torch(object):
         input:
             pts: tensor [N x 2]
         """
-        from utils.losses import extract_patch_from_points
-        from utils.losses import soft_argmax_2d
-        from utils.losses import norm_patches
-
         ##### check not take care of batch #####
         # print("not take care of batch! only take first element!")
         pts = pts[0].transpose().copy()
         patches = extract_patch_from_points(self.heatmap, pts, patch_size=patch_size)
-        import torch
         patches = np.stack(patches)
         patches_torch = torch.tensor(patches, dtype=torch.float32).unsqueeze(0)
 
         # norm patches
         patches_torch = norm_patches(patches_torch)
-
-        from utils.losses import do_log
         patches_torch = do_log(patches_torch)
-        # patches_torch = do_log(patches_torch)
-        # print("one tims of log!")
-        # print("patches: ", patches_torch.shape)
-        # print("pts: ", pts.shape)
 
         dxdy = soft_argmax_2d(patches_torch, normalized_coordinates=False)
-        # print("dxdy: ", dxdy.shape)
         points = pts
         points[:, :2] = points[:, :2] + dxdy.numpy().squeeze() - patch_size//2
         self.patches = patches_torch.numpy().squeeze()
         self.pts_subpixel = [points.transpose().copy()]
+
         return self.pts_subpixel.copy()
 
-    # @staticmethod
-    def get_image_patches(self, pts, image, patch_size=5):
+    @staticmethod
+    def get_image_patches(pts, image, patch_size=5):
         """
         input:
             image: np [H, W]
         return:
             patches: np [N, patch, patch]
         """
-        from utils.losses import extract_patch_from_points
         pts = pts[0].transpose().copy()
         patches = extract_patch_from_points(image, pts, patch_size=patch_size)
         patches = np.stack(patches)
+
         return patches
 
     def extract_points(self, heatmap: np.ndarray | Tensor):
@@ -153,6 +146,7 @@ class SuperPointFrontend_torch(object):
         # --- Process descriptor.
         H, W = coarse_desc.shape[2]*self.cell, coarse_desc.shape[3]*self.cell
         D = coarse_desc.shape[1]
+
         if pts.shape[1] == 0:
             desc = np.zeros((D, 0))
         else:
@@ -167,6 +161,7 @@ class SuperPointFrontend_torch(object):
             desc = torch.nn.functional.grid_sample(coarse_desc, samp_pts, align_corners=True)
             desc = desc.data.cpu().numpy().reshape(D, -1)
             desc /= np.linalg.norm(desc, axis=0)[np.newaxis, :]
+
         return desc
 
     def subpixel_predict(self, pred_res, points, verbose=False):
@@ -178,6 +173,7 @@ class SuperPointFrontend_torch(object):
             subpixels: [3, N]
         """
         D = points.shape[0]
+
         if points.shape[1] == 0:
             pts_subpixel = np.zeros((D, 0))
         else:
@@ -188,68 +184,53 @@ class SuperPointFrontend_torch(object):
             pts_subpixel[:2, :] += points_res
             if verbose:
                 print("after: ", pts_subpixel[:, :5])
+
         return pts_subpixel
 
-    def run(self, inp, onlyHeatmap=False, train=True):
-        """ Process a numpy image to extract points and descriptors.
-        Input
-          img - HxW tensor float32 input image in range [0,1].
-        Output
-          corners - 3xN numpy array with corners [x_i, y_i, confidence_i]^T.
-          desc - 256xN numpy array of corresponding unit normalized descriptors.
-          heatmap - HxW numpy heatmap in range [0,1] of point confidences.
-          """
-        # assert img.ndim == 2, 'Image must be grayscale.'
-        # assert img.dtype == np.float32, 'Image must be float32.'
-        # H, W = img.shape[0], img.shape[1]
-        # inp = img.copy()
-        # inp = (inp.reshape(1, H, W))
-        # inp = torch.from_numpy(inp)
-        # inp = torch.autograd.Variable(inp).view(1, 1, H, W)
-        # if self.cuda:
-        inp = inp.to(self.device)
+    def run(self, image: np.ndarray, only_heatmap: bool = False, train: bool = True) -> tuple:
+        """
+        Extracts points and descriptors from the input image
+
+        Kwargs:
+            image  <np.ndarray>: HxW tensor float32 input image in range [0,1].
+            only_heatmap <bool>: Whether or not return the heatmap only.
+                                 Default False
+            train        <bool>:
+
+        Returns:
+            pts <list[np.ndarray]>: list containing a batch of 3xN numpy array corners
+                                    [x_i, y_i, confidence_i]
+            pts_desc <list[np.ndarray]>: list containing a batch of 256xN numpy array descriptors
+            dense_desc <Tensor>: Tensor [B, 256, H, W] of corresponding unit normalized descriptors.
+            heatmap <Tensor>: Tensor [B, 1, H, W] of confidence scores in [0,1].
+        """
+        inp = image.to(self.device)
         batch_size, H, W = inp.shape[0], inp.shape[2], inp.shape[3]
+
         if train:
-            # outs = self.net.forward(inp, subpixel=self.subpixel)
             outs = self.net.forward(inp)
-            # semi, coarse_desc = outs[0], outs[1]
             semi, coarse_desc = outs['semi'], outs['desc']
         else:
-            # Forward pass of network.
             with torch.no_grad():
-                # outs = self.net.forward(inp, subpixel=self.subpixel)
                 outs = self.net.forward(inp)
-                # semi, coarse_desc = outs[0], outs[1]
                 semi, coarse_desc = outs['semi'], outs['desc']
 
         # as tensor
-        from utils.utils import labels2Dto3D, flattenDetection
-        from utils.d2s import DepthToSpace
         # flatten detection
         heatmap = flattenDetection(semi, tensor=True)
         self.heatmap = heatmap
-        # depth2space = DepthToSpace(8)
-        # print(semi.shape)
-        # heatmap = depth2space(semi[:,:-1,:,:]).squeeze(0)
-        # need to change for batches
 
-        if onlyHeatmap:
+        if only_heatmap:
             return heatmap
 
         # extract keypoints
-        # pts = [self.extract_points(heatmap[i,:,:,:].cpu().detach().numpy().squeeze()).transpose() for i in range(batch_size)]
-        # pts = [self.extract_points(heatmap[i,:,:,:].cpu().detach().numpy().squeeze()) for i in range(batch_size)]
-        # print("heapmap shape: ", heatmap.shape)
-        pts = [self.extract_points(heatmap[i, :, :, :].cpu().detach().numpy()) for i in range(batch_size)]
+        pts = [self.extract_points(heatmap[i, :, :, :].cpu().detach().numpy().squeeze()) for i in range(batch_size)]
         self.pts = pts
 
         if self.subpixel:
+            # FIXME: the following line is not working
             labels_res = outs[2]
             self.pts_subpixel = [self.subpixel_predict(toNumpy(labels_res[i, ...]), pts[i]) for i in range(batch_size)]
-        '''
-        pts:
-            list [batch_size, np(N_i, 3)] -- each point (x, y, probability)
-        '''
 
         # interpolate description
         '''
@@ -258,7 +239,6 @@ class SuperPointFrontend_torch(object):
         dense_desc:
             tensor (batch_size, 256, H, W)
         '''
-        # m = nn.Upsample(scale_factor=(1, self.cell, self.cell), mode='bilinear')
         dense_desc = nn.functional.interpolate(coarse_desc, scale_factor=(self.cell, self.cell), mode='bilinear')
         # norm the descriptor
 
@@ -270,12 +250,12 @@ class SuperPointFrontend_torch(object):
 
         # extract descriptors
         dense_desc_cpu = dense_desc.cpu().detach().numpy()
-        # pts_desc = [dense_desc_cpu[i, :, pts[i][:, 1].astype(int), pts[i][:, 0].astype(int)] for i in range(len(pts))]
         pts_desc = [dense_desc_cpu[i, :, pts[i][1, :].astype(
             int), pts[i][0, :].astype(int)].transpose() for i in range(len(pts))]
 
         if self.subpixel:
             return self.pts_subpixel, pts_desc, dense_desc, heatmap
+
         return pts, pts_desc, dense_desc, heatmap
 
 
