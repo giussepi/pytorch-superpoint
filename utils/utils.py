@@ -547,17 +547,17 @@ def extract_points(
     assert isinstance(nms_radius, int), type(nms_radius)
     assert isinstance(inner_margin, int), type(inner_margin)
 
-    H, W = heatmap.shape[:2]
+    height, width = heatmap.shape[:2]
     # Points filtering based on conf_thresh
     ys, xs = np.where(heatmap >= conf_thresh)
 
     pts = np.stack([xs, ys, heatmap[ys, xs]])
     # Applying Non-maximum Suppression (NMS)
-    pts = apply_nms(pts, H, W, nms_radius)[0]
+    pts = apply_nms(pts, height, width, nms_radius)[0]
 
     # Getting rid of points close to the heatmap borders
-    selected_xs = (pts[0] >= inner_margin) * (pts[0] < W - inner_margin)
-    selected_ys = (pts[1] >= inner_margin) * (pts[1] < H - inner_margin)
+    selected_xs = (pts[0] >= inner_margin) * (pts[0] < width - inner_margin)
+    selected_ys = (pts[1] >= inner_margin) * (pts[1] < height - inner_margin)
     selected_pts = selected_xs * selected_ys
     pts = pts[:, selected_pts]
 
