@@ -202,7 +202,6 @@ def evaluate(args, **options):
                     nn_thresh = 1.2
                     print("nn threshold: ", nn_thresh)
                     tracker = PointTracker(max_length=2, nn_thresh=nn_thresh)
-                    # matches = tracker.nn_match_two_way(desc, warped_desc, nn_)
                     tracker.update(keypoints.T, desc.T)
                     tracker.update(warped_keypoints.T, warped_desc.T)
                     matches = tracker.get_matches().T
