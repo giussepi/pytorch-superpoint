@@ -50,7 +50,7 @@ def combine_heatmap(heatmap, inv_homographies, mask_2D, device="cpu"):
 # end util functions
 
 
-def export_descriptor(config, output_dir, args):
+def export_descriptor(config: dict, output_dir: str, args: argparse.Namespace):
     """
     # input 2 images, output keypoints and correspondence
     save prediction:
@@ -64,9 +64,14 @@ def export_descriptor(config, output_dir, args):
             'homography': np (3,3)
             'matches': np [N3, 4]
     """
+    assert isinstance(config, dict), type(config)
+    assert isinstance(output_dir, str), type(output_dir)
+    assert isinstance(args, argparse.Namespace), type(args)
+
     # basic settings
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     logging.info("train on device: %s", device)
+    verbose = config.get('verbose', False)
 
     with open(os.path.join(output_dir, "config.yml"), "w") as f:
         yaml.dump(config, f, default_flow_style=False)
@@ -114,7 +119,7 @@ def export_descriptor(config, output_dir, args):
             pts = val_agent.heatmap_to_pts()
 
             if subpixel:
-                pts = val_agent.soft_argmax_points(pts, patch_size=patch_size)
+                pts = val_agent.soft_argmax_points(pts, patch_size=patch_size, verbose=verbose)
 
             # heatmap, pts to desc
             desc_sparse = val_agent.desc_to_sparseDesc()
@@ -151,9 +156,11 @@ def export_descriptor(config, output_dir, args):
 
         if outputMatches == True:
             matches = tracker.get_matches()
-            print("matches: ", matches.transpose().shape)
+            if verbose:
+                print("matches: ", matches.transpose().shape)
             pred.update({"matches": matches.transpose()})
-        print("pts: ", pts.shape, ", desc: ", desc.shape)
+        if verbose:
+            print("pts: ", pts.shape, ", desc: ", desc.shape)
 
         # clean last descriptor
         tracker.clear_desc()
@@ -163,7 +170,9 @@ def export_descriptor(config, output_dir, args):
         np.savez_compressed(path, **pred)
         # print("save: ", path)
         count += 1
-    print("output pairs: ", count)
+
+    if verbose:
+        print("output pairs: ", count)
 
 
 @torch.no_grad()

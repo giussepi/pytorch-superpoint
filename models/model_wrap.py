@@ -99,7 +99,7 @@ class SuperPointFrontend_torch:
         # print("set heatmap")
         self._heatmap = heatmap
 
-    def soft_argmax_points(self, pts, patch_size=5):
+    def soft_argmax_points(self, pts, patch_size: int = 5, verbose: bool = False):
         """
         input:
             pts: tensor [N x 2]
@@ -107,7 +107,7 @@ class SuperPointFrontend_torch:
         ##### check not take care of batch #####
         # print("not take care of batch! only take first element!")
         pts = pts[0].transpose().copy()
-        patches = extract_patch_from_points(self.heatmap, pts, patch_size=patch_size)
+        patches = extract_patch_from_points(self.heatmap, pts, patch_size=patch_size, verbose=verbose)
         patches = np.stack(patches)
         patches_torch = torch.tensor(patches, dtype=torch.float32).unsqueeze(0)
 
