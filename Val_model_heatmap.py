@@ -1,31 +1,25 @@
-"""This is the main validation interface using heatmap trick
+# -*- coding: utf-8 -*-
+""" Val_model_heatmap.py
+
+This is the main validation interface using heatmap trick
 
 Author: You-Yi Jau, Rui Zhu
 Date: 2019/12/12
 """
 
+import logging
 
 import numpy as np
 import torch
-from torch.autograd import Variable
-import torch.backends.cudnn as cudnn
-import torch.optim
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.utils.data
+import yaml
+from torch import Tensor
 from tqdm import tqdm
-from utils.loader import dataLoader, modelLoader
-import logging
 
-from utils.tools import dict_update
-
-from utils.utils import labels2Dto3D, flattenDetection, labels2Dto3D_flattened
-
-from utils.utils import pltImshow, saveImg
-from utils.utils import precisionRecall_torch
-
-from pathlib import Path
 from models.model_wrap import SuperPointFrontend_torch
+from Train_model_heatmap import Train_model_heatmap
+from utils.loader import dataLoader, modelLoader, dataLoader_test
+from utils.losses import extract_patches
+from utils.utils import flattenDetection, toNumpy
 
 
 @torch.no_grad()
@@ -54,21 +48,14 @@ class Val_model_heatmap(SuperPointFrontend_torch):
         self.pts_nms_batch = None
         self.desc_sparse_batch = None
         self.patches = None
-        pass
 
     def loadModel(self):
-        # model = 'SuperPointNet'
-        # params = self.config['model']['subpixel']['params']
-        from utils.loader import modelLoader
         self.net = modelLoader(model=self.model, **self.params)
-
         checkpoint = torch.load(self.weights_path,
                                 map_location=lambda storage, loc: storage)
         self.net.load_state_dict(checkpoint['model_state_dict'])
-
         self.net = self.net.to(self.device)
         logging.info('successfully load pretrained model from: %s', self.weights_path)
-        pass
 
     def extract_patches(self, label_idx, img):
         """
@@ -76,95 +63,58 @@ class Val_model_heatmap(SuperPointFrontend_torch):
             label_idx: tensor [N, 4]: (batch, 0, y, x)
             img: tensor [batch, channel(1), H, W]
         """
-        from utils.losses import extract_patches
         patch_size = self.config['params']['patch_size']
         patches = extract_patches(label_idx.to(self.device), img.to(self.device),
                                   patch_size=patch_size)
+
         return patches
-        pass
 
-    def run(self, images):
+    def run(self, images: Tensor) -> np.ndarray:
         """
-        input:
-            images: tensor[batch(1), 1, H, W]
-
+        Kwargs:
+            images <Tensor>: tensor [batch(1), 1, H, W]
         """
-        from Train_model_heatmap import Train_model_heatmap
-        from utils.utils import toNumpy
-        train_agent = Train_model_heatmap
-
         with torch.no_grad():
             outs = self.net(images)
+
         semi = outs['semi']
         self.outs = outs
-
         channel = semi.shape[1]
+
         if channel == 64:
-            heatmap = train_agent.flatten_64to1(semi, cell_size=self.cell_size)
+            heatmap = Train_model_heatmap.flatten_64to1(semi, cell_size=self.cell_size)
         elif channel == 65:
             heatmap = flattenDetection(semi, tensor=True)
+        else:
+            raise RuntimeError('Current implementation only supports channel 64 or 65')
 
-        heatmap_np = toNumpy(heatmap)
-        self.heatmap = heatmap_np
+        self.heatmap = toNumpy(heatmap)
+
         return self.heatmap
-        pass
 
     def heatmap_to_pts(self):
-        heatmap_np = self.heatmap
+        self.pts_nms_batch = [self.extract_points(h.squeeze()) for h in self.heatmap]  # [batch, H, W]
 
-        pts_nms_batch = [self.extract_points(h) for h in heatmap_np]  # [batch, H, W]
-        self.pts_nms_batch = pts_nms_batch
-        return pts_nms_batch
-
-    # def soft_argmax_points(self):
-    #     """
-    #     # make sure you have points ahead
-    #     inputs:
-
-    #     """
-    #     # from utils.losses import extract_patches
-    #     from utils.losses import extract_patch_from_points
-
-    #     ##### check not take care of batch #####
-    #     print("not take care of batch! only take first element!")
-    #     pts = self.pts_nms_batch
-    #     pts = pts[0].transpose().copy()
-    #     patches = extract_patch_from_points(self.heatmap, pts, patch_size=5)
-    #     import torch
-    #     patches = np.stack(patches)
-    #     patches_torch = torch.tensor(patches, dtype=torch.float32).unsqueeze(0)
-    #     print("patches: ", patches_torch.shape)
-    #     print("pts: ", pts.shape)
-
-    #     dxdy = soft_argmax_2d(patches_torch)
-    #     print("dxdy: ", dxdy.shape)
-    #     points = pts
-    #     points[:,:2] += dxdy.numpy().squeeze()
-    #     self.pts_subpixel = [points.transpose().copy()]
-    #     return self.pts_subpixel.copy()
-    #     pass
+        return self.pts_nms_batch
 
     def desc_to_sparseDesc(self):
-        # pts_nms_batch = [self.extract_points(h) for h in heatmap_np]
-        desc_sparse_batch = [self.sample_desc_from_points(self.outs['desc'], pts) for pts in self.pts_nms_batch]
-        self.desc_sparse_batch = desc_sparse_batch
-        return desc_sparse_batch
+        self.desc_sparse_batch = [
+            self.sample_desc_from_points(self.outs['desc'], pts) for pts in self.pts_nms_batch]
+
+        return self.desc_sparse_batch
 
 
 if __name__ == '__main__':
-    # filename = 'configs/magicpoint_shapes_subpix.yaml'
     filename = 'configs/magicpoint_repeatability_heatmap.yaml'
-    import yaml
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     torch.set_default_tensor_type(torch.FloatTensor)
     with open(filename, 'r') as f:
-        config = yaml.load(f)
+        config = yaml.safe_load(f)
 
     task = config['data']['dataset']
     # data loading
-    from utils.loader import dataLoader_test as dataLoader
-    data = dataLoader(config, dataset='hpatches')
+    data = dataLoader_test(config, dataset='hpatches')
     test_set, test_loader = data['test_set'], data['test_loader']
 
     # load frontend
