@@ -157,8 +157,8 @@ class SuperPointNet_process(object):
         heatmap = heatmap.squeeze()
         boxnms = False
         # print("heatmap: ", heatmap.shape)
-        from utils.utils import getPtsFromHeatmap
-        pts_nms = getPtsFromHeatmap(heatmap, conf_thresh, nms_dist)
+        from utils.utils import extract_points
+        pts_nms = extract_points(heatmap, conf_thresh, nms_dist)
 
         semi_thd_nms_sample = np.zeros_like(heatmap)
         semi_thd_nms_sample[pts_nms[1, :].astype(int), pts_nms[0, :].astype(int)] = 1

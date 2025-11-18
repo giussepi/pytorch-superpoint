@@ -1,4 +1,5 @@
-"""
+# -*- coding: utf-8 -*-
+""" export.py
 This script exports detection/ description using pretrained model.
 
 Author: You-Yi Jau, Rui Zhu
@@ -6,21 +7,24 @@ Date: 2019/12/12
 """
 
 import argparse
-import os
 import logging
+import os
 from pathlib import Path
 
 import numpy as np
 import torch
-import torch.optim
-import torch.utils.data
 import yaml
 from imageio import imread
 from tqdm import tqdm
 
 from models.model_wrap import SuperPointFrontend_torch, PointTracker
-from utils.utils import inv_warp_image_batch
 from settings import EXPER_PATH
+from utils.draw import draw_keypoints
+from utils.loader import get_save_path, dataLoader_test, get_module
+from utils.print_tool import datasize
+from utils.utils import inv_warp_image_batch, saveImg
+from utils.var_dim import squeezeToNumpy
+
 
 # util functions
 
@@ -39,13 +43,14 @@ def combine_heatmap(heatmap, inv_homographies, mask_2D, device="cpu"):
     )
     heatmap = torch.sum(heatmap, dim=0)
     mask_2D = torch.sum(mask_2D, dim=0)
+
     return heatmap / mask_2D
 
 
 # end util functions
 
 
-def export_descriptor(config, output_dir, args):
+def export_descriptor(config: dict, output_dir: str, args: argparse.Namespace):
     """
     # input 2 images, output keypoints and correspondence
     save prediction:
@@ -59,14 +64,18 @@ def export_descriptor(config, output_dir, args):
             'homography': np (3,3)
             'matches': np [N3, 4]
     """
-    from utils.loader import get_save_path
-    from utils.var_dim import squeezeToNumpy
+    assert isinstance(config, dict), type(config)
+    assert isinstance(output_dir, str), type(output_dir)
+    assert isinstance(args, argparse.Namespace), type(args)
 
     # basic settings
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     logging.info("train on device: %s", device)
+    verbose = config.get('verbose', False)
+
     with open(os.path.join(output_dir, "config.yml"), "w") as f:
         yaml.dump(config, f, default_flow_style=False)
+
     save_path = get_save_path(output_dir)
     save_output = save_path / "../predictions"
     os.makedirs(save_output, exist_ok=True)
@@ -77,15 +86,12 @@ def export_descriptor(config, output_dir, args):
     patch_size = config["model"]["subpixel"]["patch_size"]
 
     # data loading
-    from utils.loader import dataLoader_test as dataLoader
     task = config["data"]["dataset"]
-    data = dataLoader(config, dataset=task)
+    data = dataLoader_test(config, dataset=task)
     test_set, test_loader = data["test_set"], data["test_loader"]
-    from utils.print_tool import datasize
     datasize(test_loader, config, tag="test")
 
     # model loading
-    from utils.loader import get_module
     Val_model_heatmap = get_module("", config["front_end_model"])
     # load pretrained
     val_agent = Val_model_heatmap(config["model"], device=device)
@@ -96,7 +102,7 @@ def export_descriptor(config, output_dir, args):
 
     # check!!!
     count = 0
-    for i, sample in tqdm(enumerate(test_loader)):
+    for sample in tqdm(test_loader):
         img_0, img_1 = sample["image"], sample["warped_image"]
 
         # first image, no matches
@@ -106,24 +112,20 @@ def export_descriptor(config, output_dir, args):
             pts: list [numpy (3, N)]
             desc: list [numpy (256, N)]
             """
-            heatmap_batch = val_agent.run(
+            _ = val_agent.run(
                 img.to(device)
             )  # heatmap: numpy [batch, 1, H, W]
             # heatmap to pts
             pts = val_agent.heatmap_to_pts()
-            # print("pts: ", pts)
+
             if subpixel:
-                pts = val_agent.soft_argmax_points(pts, patch_size=patch_size)
+                pts = val_agent.soft_argmax_points(pts, patch_size=patch_size, verbose=verbose)
+
             # heatmap, pts to desc
             desc_sparse = val_agent.desc_to_sparseDesc()
-            # print("pts[0]: ", pts[0].shape, ", desc_sparse[0]: ", desc_sparse[0].shape)
-            # print("pts[0]: ", pts[0].shape)
             outs = {"pts": pts[0], "desc": desc_sparse[0]}
-            return outs
 
-        def transpose_np_dict(outs):
-            for entry in list(outs):
-                outs[entry] = outs[entry].transpose()
+            return outs
 
         outs = get_pts_desc_from_agent(val_agent, img_0, device=device)
         pts, desc = outs["pts"], outs["desc"]  # pts: np [3, N]
@@ -154,9 +156,11 @@ def export_descriptor(config, output_dir, args):
 
         if outputMatches == True:
             matches = tracker.get_matches()
-            print("matches: ", matches.transpose().shape)
+            if verbose:
+                print("matches: ", matches.transpose().shape)
             pred.update({"matches": matches.transpose()})
-        print("pts: ", pts.shape, ", desc: ", desc.shape)
+        if verbose:
+            print("pts: ", pts.shape, ", desc: ", desc.shape)
 
         # clean last descriptor
         tracker.clear_desc()
@@ -166,7 +170,9 @@ def export_descriptor(config, output_dir, args):
         np.savez_compressed(path, **pred)
         # print("save: ", path)
         count += 1
-    print("output pairs: ", count)
+
+    if verbose:
+        print("output pairs: ", count)
 
 
 @torch.no_grad()
@@ -177,9 +183,6 @@ def export_detector_homoAdapt_gpu(config, output_dir, args):
         pred:
             'prob' (keypoints): np (N1, 3)
     """
-    from utils.utils import saveImg
-    from utils.draw import draw_keypoints
-
     # basic setting
     task = config["data"]["dataset"]
     export_task = config["data"]["export_folder"]
@@ -209,9 +212,7 @@ def export_detector_homoAdapt_gpu(config, output_dir, args):
     os.makedirs(save_output, exist_ok=True)
 
     # data loading
-    from utils.loader import dataLoader_test as dataLoader
-
-    data = dataLoader(config, dataset=task, export_task=export_task)
+    data = dataLoader_test(config, dataset=task, export_task=export_task)
     test_set, test_loader = data["test_set"], data["test_loader"]
 
     # model loading
@@ -276,9 +277,9 @@ def export_detector_homoAdapt_gpu(config, output_dir, args):
                 continue
 
         # pass through network
-        heatmap = fe.run(img, onlyHeatmap=True, train=False)
+        heatmap = fe.run(img, only_heatmap=True, train=False)
         outputs = combine_heatmap(heatmap, inv_homographies, mask_2D, device=device)
-        pts = fe.getPtsFromHeatmap(outputs.detach().cpu().squeeze())  # (x,y, prob)
+        pts = fe.extract_points(outputs.detach().cpu().squeeze())  # (x,y, prob)
 
         # subpixel prediction
         if config["model"]["subpixel"]["enable"]:

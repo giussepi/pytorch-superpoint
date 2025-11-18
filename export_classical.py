@@ -73,7 +73,6 @@ def export_descriptor(config, output_dir, args):
     count = 0
     max_length = 5
     method = config['model']['method']
-    # tracker = PointTracker(max_length, nn_thresh=fe.nn_thresh)
 
     # for sample in tqdm(enumerate(test_loader)):
     for i, sample in tqdm(enumerate(test_loader)):
@@ -135,10 +134,6 @@ def export_descriptor(config, output_dir, args):
         })
         pts, desc_2 = classicalDetectors(imgs_np[1], method=method)
         pts_list.append(pts)
-
-        # if outputMatches == True:
-        #     tracker.update(pts, desc)
-        # pred.update({'matches': matches.transpose()})
 
         print("total points: ", pts.shape)
         pred.update({'warped_prob': pts,

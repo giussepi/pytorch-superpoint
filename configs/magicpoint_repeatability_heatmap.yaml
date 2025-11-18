@@ -27,7 +27,7 @@ model:
     nn_thresh: 1.0 # 0.7
     homography_adaptation:
         num: 0
-    subpixel: 
+    subpixel:
         enable: true
         patch_size: 5
     rand_noise:
@@ -41,3 +41,4 @@ model:
 
 
 eval_iter: 1000
+verbose: false  # whether or not print detail/debug messages

@@ -21,7 +21,7 @@ from utils.multiple_progress_bars import pbiter
 from utils.tools import dict_update
 from utils.utils import (labels2Dto3D, flattenDetection, labels2Dto3D_flattened,
                          saveImg, precisionRecall_torch, save_checkpoint, toNumpy, thd_img, img_overlap,
-                         getPtsFromHeatmap, box_nms)
+                         extract_points, box_nms)
 
 __all__ = [
     'Train_model_frontend',
@@ -737,14 +737,14 @@ class Train_model_frontend(object):
             semi_flat_tensor = flattenDetection(semi[idx, :, :, :]).detach()
             semi_flat = toNumpy(semi_flat_tensor)
             semi_thd = np.squeeze(semi_flat, 0)
-            pts_nms = getPtsFromHeatmap(semi_thd, conf_thresh, nms_dist)
+            pts_nms = extract_points(semi_thd, conf_thresh, nms_dist)
             semi_thd_nms_sample = np.zeros_like(semi_thd)
             semi_thd_nms_sample[
                 pts_nms[1, :].astype(int), pts_nms[0, :].astype(int)
             ] = 1
 
             label_sample = torch.squeeze(labels_2D[idx, :, :, :])
-            # pts_nms = getPtsFromHeatmap(label_sample.numpy(), conf_thresh, nms_dist)
+            # pts_nms = extract_points(label_sample.numpy(), conf_thresh, nms_dist)
             # label_sample_rms_sample = np.zeros_like(label_sample.numpy())
             # label_sample_rms_sample[pts_nms[1, :].astype(int), pts_nms[0, :].astype(int)] = 1
             label_sample_nms_sample = label_sample
