@@ -8,6 +8,7 @@ class to process superpoint net
 
 import numpy as np
 import torch
+from scipy.spatial.distance import cdist
 from torch import nn, Tensor
 
 from models.SuperPointNet_pretrained import SuperPointNet
@@ -440,3 +441,419 @@ class PointTracker:
         # Store the last descriptors.
         self.last_desc = desc.copy()
         # self.last_pts = pts[:2, :].copy()  # [x_i, y_i]
+
+
+class PointTracker2:
+    """
+    Contains methods to track points based on the L2 distance between their descriptors.
+
+    Usage:
+        tracker = PointTracker()
+        tracker.update(<3xN array of N points>, <DxN array of N points' descriptors>)
+        # or
+        tracker(<3xN array of N points>, <DxN array of N points' descriptors>)
+    """
+
+    def __init__(
+            self, num_frames: int = 2, desc_threshold: float = .7, /, *,
+            max_points: int = -1, min_conf: float = .5
+    ):
+        """
+        Kwargs:
+            num_frames       <int>: number of frames to track.
+                                    Default 2
+            desc_threshold <float>: maximum descriptors L2 distance allowed
+                                    Default .7
+            TODO: implement max_points logic
+            max_points      <int> : maximum number of points to track (>=1). Set it to -1 for unlimited tracks
+                                    Default -1.
+            # TODO: implement it
+            min_conf       <float>: minimum confidence of points
+                                    Default .5
+        """
+        assert isinstance(num_frames, int), type(num_frames)
+        assert num_frames >= 2, num_frames
+        assert isinstance(desc_threshold, float), type(desc_threshold)
+        assert isinstance(max_points, int), type(max_points)
+        max_points = max_points if max_points >= 0 else np.inf
+        assert max_points > 0, max_points
+        assert 0 < min_conf < 1, min_conf
+
+        self.num_frames = num_frames
+        self.desc_threshold = desc_threshold
+        self.prev_desc = None
+        self.tracks = np.empty((0, self.num_frames + 3))
+        # NOTE: tracks columns are:
+        # |----------+----------------+----------+------------+-----+---------------------|
+        # | track_ID | cumulative_avg | num_desc | desc_ids_1 | ... | desc_ids_num_frames |
+        # |----------+----------------+----------+------------+-----+---------------------|
+        # Where
+        # track_ID       : tracking ID
+        # cumulative_avg : cumulative average of scores (descriptors L2 distance)
+        # num_desc       : n value utilised to compute the cumulative_avg, i.e., zero-based counter
+        #                  of points/descriptors processed (so it means processed points - 1)
+        # desc_ids_n     : descriptors ids/positions tracked at time n, where  2 <= n <= num_frames
+        self.total_tracks = 0  # all-time tracked descriptors/points
+        self.max_points = max_points
+        self.min_conf = min_conf
+
+    def __call__(self, pts: np.ndarray, desc: np.ndarray):
+        """
+        Calls upddate to add points and descriptors to tracks
+
+        Kwargs:
+            pts  <np.ndarray>: 3xN array of N points with shape [x_n, y_n, confidence_n]
+            desc <np.ndarray>: DxN array of corresponding N D-dimensional descriptors
+        """
+        return self.update(pts, desc)
+
+    # @staticmethod
+    # def nn_match_two_way(desc1: np.ndarray, desc2: np.ndarray, nn_thresh: float) -> np.ndarray:
+    #     # TODO: need to be improved
+    #     """
+    #     Performs two-way nearest neighbor matching of two sets of descriptors, such
+    #     that the NN match from descriptor A->B must equal the NN match from B->A.
+
+    #     Kwargs:
+    #         desc1 <np.ndarray>: MxN matrix of N M-dimensional descriptors.
+    #         desc2 <np.ndarray>: MxP matrix of P M-dimensional descriptors.
+    #         nn_thresh  <float>: Maximum descritor distance
+
+    #     Returns:
+    #         matches <np.ndarray>: 3xL matrix, of L matches, where L <= N and each column i is
+    #                               a match of two descriptors, idx_i index from desc1 and
+    #                               idx_j index from desc2: [idx_i, idx_j, match_score]^T
+    #     """
+    #     assert desc1.shape[0] == desc2.shape[0]
+    #     assert nn_thresh > 0, nn_thresh
+
+    #     if desc1.shape[1] == 0 or desc2.shape[1] == 0:
+    #         return np.zeros((3, 0))
+
+    #     # Compute L2 distance. Easy since vectors are unit normalized.
+    #     dmat = np.dot(desc1.T, desc2)  # NxP
+    #     dmat = np.sqrt(2 - 2 * np.clip(dmat, -1, 1))
+    #     # from scipy.spatial.distance import cdist
+    #     # cdist(desc1.T, desc1.T, metric='euclidean')
+    #     # or
+    #     # cosine distance
+    #     # dmat = 1 - np.matmul(desc1.T, desc2)
+    #     # Get NN indices and scores.
+    #     idx = np.argmin(dmat, axis=1)  # N positions selected from desc2
+    #     scores = dmat[np.arange(dmat.shape[0]), idx]  # N
+    #     # Threshold the NN matches.
+    #     keep = scores < nn_thresh  # N
+    #     # Check if nearest neighbor goes both directions and keep those.
+    #     idx2 = np.argmin(dmat, axis=0)  # P positions selected from desc1
+    #     keep_bi = np.arange(len(idx)) == idx2[idx]  # FIXME: case min distance links to more than one point
+    #     keep = np.logical_and(keep, keep_bi)  # N
+    #     # FIXME: the previous line could be replaced by.
+    #     # keep = keep * keep_bi
+    #     idx = idx[keep]  # <= N
+    #     scores = scores[keep]
+    #     # Get the surviving point indices.
+    #     m_idx1 = np.arange(desc1.shape[1])[keep]
+    #     m_idx2 = idx
+    #     # Populate the final 3xL match data structure. L <= N
+    #     matches = np.zeros((3, int(keep.sum())))
+    #     matches[0, :] = m_idx1
+    #     matches[1, :] = m_idx2
+    #     matches[2, :] = scores
+
+    #     return matches
+
+    @staticmethod
+    def nn_match_two_way(
+            desc1: np.ndarray, desc2: np.ndarray, nn_thresh: float, /, *,  cosine_distance: bool = False
+    ) -> np.ndarray:
+        """
+        Performs two-way nearest neighbor matching of two sets of descriptors, such
+        that the NN match from descriptor A->B must equal the NN match from B->A.
+
+        Kwargs:
+            desc1     <np.ndarray>: MxN matrix of N M-dimensional unit normalized descriptors.
+            desc2     <np.ndarray>: MxP matrix of P M-dimensional unit normalized descriptors.
+            nn_thresh      <float>: Maximum distance among descriptors.
+            cosine_distance <bool>: Employs cosine distance if true, else, L2 distance is utilized
+                                    Default False
+
+        Returns:
+            matches <np.ndarray>: 3xS matrix, of S matches, where S <= N and each column i is
+                                  a match of two descriptors, idx_0_s index from desc1 and
+                                  idx_1_s index from desc2: [idx_0_s, idx_1_s, match_score_2_s]^T
+        """
+        assert isinstance(desc1, np.ndarray), type(desc1)
+        assert isinstance(desc2, np.ndarray), type(desc2)
+        assert isinstance(nn_thresh, float), type(nn_thresh)
+        assert isinstance(cosine_distance, bool), type(cosine_distance)
+        assert desc1.shape[0] == desc2.shape[0]
+        assert nn_thresh > 0, nn_thresh
+
+        N, P = desc1.shape[1], desc2.shape[1]
+
+        if N == 0 or P == 0:
+            return np.zeros((3, 0))
+
+        # computes distances NxP matrix
+        if cosine_distance:
+            dmat = 1 - np.matmul(desc1.T, desc2)
+        else:  # Euclidean distance from unit normalized vectors
+            dmat = cdist(desc1.T, desc2.T, metric='euclidean')  # NxP distance matrix
+
+        idx_desc2 = np.argmin(dmat, axis=1)  # N positions selected from desc2
+        scores = dmat[np.arange(N), idx_desc2]  # N distance scores
+        selection = scores <= nn_thresh  # Thresholded selection. N-dimensional array
+
+        # Applying bidirectional nearest neighbor concept
+        idx_desc1 = np.argmin(dmat, axis=0)  # P positions selected from desc1
+        # FIXME: case min distance links to more than one point
+        # N-dimensional bidirectional selections array
+        bidirectional_selection = np.arange(N) == idx_desc1[idx_desc2]
+        selection = selection * bidirectional_selection  # N-dimensional array containing S True values
+
+        # Computing 3xS matches matrix
+        matches = np.vstack([
+            np.arange(N),  # N original idxs from desc 1
+            idx_desc2,  # N positions selected from desc2
+            scores,  # N distance scores
+        ])[:, selection]
+
+        return matches
+
+    def delete_oldest_points(self):
+        """ deletes tracks column 3 (zero based) """
+        if self.tracks.shape[1] >= 4:
+            self.tracks = np.delete(self.tracks, 3, axis=1)
+
+    def delete_empty_tracks_rows(self):
+        """ deletes empty tracks rows """
+        # computing the product of the tracks rows
+        # FIXED
+        tracks_rows_prod = self.tracks[:, 3:].max(axis=1)
+        # deleting rows which are not tracking any point/descriptor
+        self.tracks = np.delete(self.tracks, np.where(tracks_rows_prod == -1), axis=0)
+
+    @classmethod
+    def compute_cumulative_avg(
+            cls, new_values: np.ndarray, previous_num_processed_values: np.ndarray, previous_ca: np.ndarray
+    ) -> np.ndarray:
+        r"""
+        Computes the cumulative average (CA) as decribed below:
+        https://en.wikipedia.org/wiki/Moving_average#Cumulative_average
+
+        CA_{n+1} = CA_n + \frac{x_{n+1} - CA_n}{n + 1}
+
+        Where:
+            CA_n   : previous_ca
+            x_{n+1}: new_values
+            n      : previous_num_processed_values
+
+        Kwargs:
+            new_values             <np.ndarray>: 1D Array of new M scores to be processed. Where new_values_i
+                                                 is the L2 distance between two descriptors.
+            previous_num_processed_values <np.ndarray>: 1D array containing the number of values processed
+                                                 so far.
+            previous_ca            <np.ndarray>: 1D Array of M previous CA scores
+        """
+        assert isinstance(new_values, np.ndarray), type(new_values)
+        assert len(new_values.shape) == 1, new_values.shape
+        assert isinstance(previous_num_processed_values, np.ndarray), type(previous_num_processed_values)
+        assert len(previous_num_processed_values.shape) == 1, previous_num_processed_values.shape
+        assert previous_num_processed_values.min() >= 0, \
+            'previous_num_processed_values cannot contain negative values'
+        assert isinstance(previous_ca, np.ndarray), type(previous_ca)
+        assert len(previous_ca.shape) == 1, previous_ca.shape
+
+        return previous_ca + (new_values - previous_ca)/(previous_num_processed_values + 1)
+
+    def update_ca_scores(self, scores: np.ndarray, idxs_to_update: list):
+        """
+        computes and updates tracks cumulative_avg (column 1) and num_desc (column 2) using provided
+        indexeds
+
+        Kwargs:
+            scores   <np.ndarray>: 1D array of corresponding descriptors scores
+            idxs_to_update <list>: list of tracks indexes to update with the scores
+        """
+        assert isinstance(scores, np.ndarray), type(scores)
+        assert len(scores.shape) == 1, scores.shape
+        assert 0 < scores.size <= self.tracks.shape[0], scores.size
+        assert isinstance(idxs_to_update, list), type(idxs_to_update)
+        assert len(idxs_to_update) == scores.size, (len(idxs_to_update), scores.size)
+
+        # increasing counters of processed descriptors (num_desc)
+        self.tracks[idxs_to_update, 2] += 1
+        # computing cumulative average n + 1
+        new_cumulative_avg = self.compute_cumulative_avg(
+            scores, self.tracks[idxs_to_update, 2], self.tracks[idxs_to_update, 1])
+        # updating cumulative averages
+        self.tracks[idxs_to_update, 1] = new_cumulative_avg
+
+    def get_new_column_for_appending(self, matches: np.ndarray) -> tuple:
+        """
+        Processes the matched decriptors indexes to create the new column to be added to tracks matrix
+
+        Kwargs:
+            matches <np.ndarray>: 2xM array of M matched descriptor positions from descriptor 1 and 2, where
+                                  each colum is [idx_desc1_0_m, idx_desc2_1_m]^T
+
+        Returns:
+            new_tracks_col <np.ndarray>, idxs_updated <list>
+
+        """
+        assert isinstance(matches, np.ndarray), type(matches)
+        assert len(matches.shape) == 2, matches.shape
+        assert matches.shape[0] == 2, matches.shape[0]
+        assert matches.shape[1] <= self.tracks.shape[0]
+
+        new_tracks_col = np.full(self.tracks.shape[0], -1)  # initial new column values
+        idxs_updated = []  # initial list of updated indexes
+
+        # if matches is not empty and there is any match
+        if matches.shape[1] > 0 and matches[1].max() != -1:
+            # mapping last tracked descriptor 1 indexes to efficiently retrieve their positions from
+            # tracks matrix
+            val_to_idx = self.to_hashmap_by_value(self.tracks[:, -1])
+
+            # updating new_tracks_col with matched indexes from descriptor 2
+            for match_ in matches.T:
+                idx = val_to_idx[match_[0]]  # retrieving tracks row idx to update
+                new_tracks_col[idx] = match_[1]  # updating value from new_tracks_col
+                idxs_updated.append(idx)  # storing idx updated
+
+        return new_tracks_col, idxs_updated
+
+    def append_matched_tracks(self, matches: np.ndarray, scores: np.ndarray):
+        """
+        Appends matched idxs as the last tracks column and updates their cumulative_avg and num_desc
+
+        Kwargs:
+            matches <np.ndarray>: 2xM array of M matched descriptor positions from descriptor 1 and 2, where
+                                  each colum is [idx_desc1_0_m, idx_desc2_1_m]^T
+            scores  <np.ndarray>: 1D array of corresponding M descriptors scores
+        """
+        assert isinstance(matches, np.ndarray), type(matches)
+        assert isinstance(scores, np.ndarray), type(scores)
+        assert len(matches.shape) == 2, matches.shape
+        assert len(scores.shape) == 1, scores.shape
+        assert matches.shape[1] <= self.tracks.shape[0], (matches.shape[1], self.tracks.shape[0])
+        assert matches.shape[1] == scores.size, (matches.shape[1], scores.size)
+
+        new_column, idxs_updated = self.get_new_column_for_appending(matches)
+
+        # Appending descriptors indexes as the last column
+        self.tracks = np.hstack([self.tracks, new_column[:, np.newaxis]])
+
+        # if matches is not empty and there is any match
+        if matches.shape[1] > 0 and matches[1].max() != -1:
+            self.update_ca_scores(scores, idxs_updated)  # Updating cumulative_avg and num_desc
+
+    def append_unmatched_tracks(self, idxs: np.ndarray = None):
+        """
+        appends unmathed idxs as new tracks rows
+
+        Kwargs:
+            idxs   <np.ndarray, None>: 1D array of descriptors positions.
+                                       Default None
+        """
+        idxs = idxs if idxs is not None else np.empty(0)
+        assert isinstance(idxs, np.ndarray), type(idxs)
+        assert len(idxs.shape) == 1, idxs.shape
+
+        if idxs.size > 0:
+            new_tracks = np.full((idxs.size, self.tracks.shape[1]), -1)
+            # setting tracking IDs
+            new_tracks[:, 0] = np.arange(idxs.shape[0]) + self.total_tracks
+            # setting initial cumulative_avg distance
+            new_tracks[:, 1] = 0
+            # setting initial num_desc
+            new_tracks[:, 2] = 0
+            # setting descriptor indexes (new unmatched tracks)
+            new_tracks[:, -1] = idxs
+            self.tracks = np.vstack([self.tracks, new_tracks])
+            # increasing all-time tracked descriptors/points
+            self.total_tracks += idxs.shape[0]
+
+    def append_tracks(self, /, *, matched: np.ndarray = None, unmatched: np.ndarray = None):
+        """
+        Appends matched and unmatched tracks appropriately
+
+        Kwargs:
+            matched   <np.ndarray>: array [3, M] containing M columns of matched descriptors idxs and their
+                                    corresponding scores [idx_desc1_0_m, idx_desc2_1_m score_2_m]^T
+                                    Default None
+            unmatched <np.ndarray>: 1D array containing unmatched descriptor idxs freom desc2
+                                    Default None
+        """
+        assert matched is not None or unmatched is not None
+
+        if matched is not None:
+            assert isinstance(matched, np.ndarray), type(matched)
+            assert len(matched.shape) == 2, 'matched must be a 2D array'
+            assert matched.shape[0] == 3, 'matched must be a 3xM array'
+        else:
+            matched = np.vstack([
+                np.full((2, self.tracks.shape[0]), -1, dtype=int),
+                np.zeros(self.tracks.shape[0], dtype=int)
+            ])
+
+        if unmatched is not None:
+            assert isinstance(unmatched, np.ndarray), type(unmatched)
+            assert len(unmatched.shape) == 1, 'unmatched must be a 1D array'
+        else:
+            unmatched = np.empty(0, dtype=int)
+
+        self.append_matched_tracks(matched[:2], matched[2])
+        self.append_unmatched_tracks(unmatched)
+
+    @staticmethod
+    def to_hashmap_by_value(array: np.ndarray) -> dict:
+        """
+        Indexes a 1D numpy array by value using a dict
+
+        Kwargs:
+            array <np.ndarray>: 1D numpy array
+
+        Returns:
+            hashmap <dict>
+        """
+        assert isinstance(array, np.ndarray), type(array)
+        assert len(array.shape) == 1, array.shape
+
+        hashmap = {val: idx for idx, val in enumerate(array)}
+
+        return hashmap
+
+    def update(self, pts: np.ndarray, desc: np.ndarray):
+        """
+        Adds points and descriptors to tracks
+
+        Kwargs:
+            pts  <np.ndarray>: 3xN array of N points [x_0_n, y_1_n, confidence_2_n]
+            desc <np.ndarray>: DxN array of corresponding N D-dimensional descriptors
+        """
+        assert isinstance(pts, np.ndarray), type(pts)
+        assert isinstance(desc, np.ndarray), type(desc)
+        assert pts.size > 0, pts.size
+        assert desc.size > 0, desc.size
+        assert pts.shape[1] == desc.shape[1], (f'pts.shape[1]={pts.shape[1]} must be equals to '
+                                               f'desc.shape[1]={desc.shape[1]}')
+
+        self.delete_oldest_points()
+        self.delete_empty_tracks_rows()
+
+        if self.prev_desc is None:  # first time adding points/descriptors
+            matched = None
+            unmatched = np.arange(pts.shape[1])
+        else:
+            matched = self.nn_match_two_way(self.prev_desc, desc, self.desc_threshold)
+            unmatched = np.delete(np.arange(pts.shape[1]), matched[1].astype(int))
+
+        self.append_tracks(matched=matched, unmatched=unmatched)
+        self.prev_desc = desc
+
+    def clear_desc(self):
+        """ deletes prev_desc """
+        # employed in export.py
+        del self.prev_desc
+        self.prev_desc = None
